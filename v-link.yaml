@@ -1,0 +1,5 @@
+server:
+  port: 1479
+
+sources:
+  - path: "D:/Videos"
