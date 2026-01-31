@@ -6,12 +6,21 @@
 
 - **/stream/**：把本地目录挂载为可播放的 HTTP 路由（浏览器/手机可直接播放，支持 Range）
 - **/api/videos**：前端用的 JSON 列表接口（递归扫描、搜索、分页）
+- **zip（MVP）**：在目录树中识别 `.zip`，由用户手动点击“解压”（仅支持 zip，解压到同目录同名文件夹）
 - **前端 UI（Svelte）**：手机适配的海报墙/搜索/最近播放
 - **单文件交付**：Go `embed` 把 `frontend/dist` 打进 exe
 
 ## 配置
 
-编辑 `v-link.yaml`：
+默认读取配置文件：**当前目录**或 **exe 同目录**的 `v-link.yaml` / `v-link.yml`。
+
+也可以显式指定配置路径：
+
+```bash
+lv-link.exe -config D:/path/to/v-link.yaml
+```
+
+示例 `v-link.yaml`：
 
 ```yaml
 server:

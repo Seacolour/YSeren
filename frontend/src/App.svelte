@@ -41,6 +41,7 @@
 
   let selected = $state(null); // TreeNode(file)
   let recent = $state(loadRecent());
+  let notice = $state('');
 
   /** @type {AbortController | null} */
   let ac = null;
@@ -88,9 +89,12 @@
 
   function listChildren(node) {
     const arr = Array.isArray(node?.children) ? node.children : [];
-    // dir first, then name
+    // dir -> zip -> file, then name
     return [...arr].sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+      if (a.type !== b.type) {
+        const rank = (t) => (t === 'dir' ? 0 : t === 'zip' ? 1 : 2);
+        return rank(a.type) - rank(b.type);
+      }
       return (a.name || '').localeCompare(b.name || '');
     });
   }
@@ -98,6 +102,7 @@
   async function fetchTree(query) {
     loading = true;
     error = '';
+    notice = '';
 
     if (ac) ac.abort();
     ac = new AbortController();
@@ -148,6 +153,42 @@
       error = `加载失败：${e?.message || e}`;
     } finally {
       loading = false;
+    }
+  }
+
+  async function extractZip(node) {
+    notice = '';
+    error = '';
+    try {
+      const res = await fetch('/api/zip/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: node.source, relPath: node.relPath })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+
+      if (data.status === 'exists') {
+        notice = `解压目录已存在：${data.extractedRelDir || ''}`;
+      } else if (data.status === 'ok') {
+        notice = `解压完成：${data.extractedRelDir || ''}`;
+      } else {
+        throw new Error(data?.message || '解压失败');
+      }
+
+      // 强制刷新树（后端有 5s cache）
+      const params = new URLSearchParams();
+      if (q && q.trim()) params.set('q', q.trim());
+      params.set('refresh', '1');
+      const treeRes = await fetch(`/api/tree?${params.toString()}`);
+      if (treeRes.ok) {
+        const treeData = await treeRes.json();
+        treeRoot = treeData.root || null;
+        indexTree(treeRoot);
+        // 保持现有 nav（不重置），用户自己选择进入新目录
+      }
+    } catch (e) {
+      error = `解压失败：${e?.message || e}`;
     }
   }
 
@@ -262,6 +303,10 @@
           <span class="muted">（{loading ? '加载中…' : q?.trim() ? '搜索结果' : '目录树' }）</span>
         </div>
 
+        {#if notice}
+          <div class="notice">{notice}</div>
+        {/if}
+
         {#if error}
           <div class="error">{error}</div>
         {/if}
@@ -298,6 +343,24 @@
                     </div>
                     <div class="chev">›</div>
                   </button>
+                {:else if it.type === 'zip'}
+                  <div class="row zip">
+                    <div class="icon folder">📦</div>
+                    <div class="row-main">
+                      <div class="row-title">{it.name}</div>
+                      <div class="row-sub">{it.relPath}</div>
+                    </div>
+                    <button
+                      type="button"
+                      class="zip-btn"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        extractZip(it);
+                      }}
+                    >
+                      解压
+                    </button>
+                  </div>
                 {:else}
                   <button type="button" class="row" onclick={() => openPlayer(it)}>
                     <div class="icon file">▶</div>
@@ -529,6 +592,21 @@
     cursor: pointer;
     color: inherit;
   }
+  .row.zip {
+    cursor: default;
+  }
+  .zip-btn {
+    border: 1px solid rgba(17, 24, 39, 0.12);
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    padding: 8px 10px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(17, 24, 39, 0.06);
+  }
+  .zip-btn:hover {
+    border-color: rgba(91, 140, 255, 0.35);
+  }
   .row:hover {
     border-color: rgba(91, 140, 255, 0.28);
   }
@@ -619,6 +697,14 @@
     color: #7f1d1d;
     background: rgba(239, 68, 68, 0.12);
     border: 1px solid rgba(239, 68, 68, 0.25);
+    padding: 10px 12px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+  }
+  .notice {
+    color: #0f3d1f;
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.25);
     padding: 10px 12px;
     border-radius: 12px;
     margin-bottom: 8px;

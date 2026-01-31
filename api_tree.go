@@ -2,14 +2,20 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 type TreeNode struct {
-	Type     string      `json:"type"` // "dir" | "file"
+	Type     string      `json:"type"` // "dir" | "file" | "zip"
 	Name     string      `json:"name"`
 	RelPath  string      `json:"relPath"`
 	Source   string      `json:"source,omitempty"`
@@ -25,6 +31,13 @@ type TreeResponse struct {
 	Root        *TreeNode `json:"root"`
 }
 
+type cachedTree struct {
+	at   time.Time
+	root *TreeNode
+}
+
+var treeCache sync.Map // key: sourceName, value: cachedTree
+
 // GET /api/tree?source=xxx&q=xxx&refresh=1
 // - source 为空：返回一个虚拟 root，children 是每个 source 的 root 目录
 // - q 为可选搜索词（匹配 name/relPath），会“裁剪树”仅保留命中的路径与祖先
@@ -36,12 +49,12 @@ func ListTreeHandler(conf *Config) http.HandlerFunc {
 
 		var root *TreeNode
 		if source != "" {
-			items, err := listVideosForSource(conf, source, refresh)
+			srcRoot, err := buildBrowsableTreeForSource(conf, source, refresh)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			root = buildTreeForSource(source, items)
+			root = srcRoot
 			if q != "" {
 				root = filterTree(root, strings.ToLower(q))
 				if root == nil {
@@ -51,11 +64,10 @@ func ListTreeHandler(conf *Config) http.HandlerFunc {
 		} else {
 			root = &TreeNode{Type: "dir", Name: "root", RelPath: ""}
 			for _, src := range conf.Sources {
-				items, err := listVideosForSource(conf, src.Name, refresh)
+				srcRoot, err := buildBrowsableTreeForSource(conf, src.Name, refresh)
 				if err != nil {
 					continue
 				}
-				srcRoot := buildTreeForSource(src.Name, items)
 				if q != "" {
 					srcRoot = filterTree(srcRoot, strings.ToLower(q))
 					if srcRoot == nil {
@@ -77,59 +89,129 @@ func ListTreeHandler(conf *Config) http.HandlerFunc {
 	}
 }
 
-func buildTreeForSource(source string, items []VideoItem) *TreeNode {
-	root := &TreeNode{
-		Type:    "dir",
-		Name:    source,
-		RelPath: "",
-		Source:  source,
+func buildBrowsableTreeForSource(conf *Config, sourceName string, refresh bool) (*TreeNode, error) {
+	var srcPath string
+	for _, s := range conf.Sources {
+		if s.Name == sourceName {
+			srcPath = s.Path
+			break
+		}
+	}
+	if srcPath == "" {
+		return nil, errors.New("unknown source: " + sourceName)
 	}
 
-	// 目录节点索引：relPath -> *TreeNode
-	dirIndex := map[string]*TreeNode{
-		"": root,
+	// cache: 5s TTL
+	const ttl = 5 * time.Second
+	if !refresh {
+		if v, ok := treeCache.Load(sourceName); ok {
+			c := v.(cachedTree)
+			if time.Since(c.at) <= ttl && c.root != nil {
+				return c.root, nil
+			}
+		}
 	}
 
-	for _, it := range items {
-		parts := strings.Split(it.RelPath, "/")
-		// parts 最后一个是文件名
-		curRel := ""
-		for i := 0; i < len(parts)-1; i++ {
-			seg := parts[i]
+	root := &TreeNode{Type: "dir", Name: sourceName, RelPath: "", Source: sourceName}
+	dirIndex := map[string]*TreeNode{"": root}
+
+	ensureDir := func(rel string) *TreeNode {
+		rel = strings.Trim(rel, "/")
+		if rel == "" {
+			return root
+		}
+		if n, ok := dirIndex[rel]; ok {
+			return n
+		}
+		parts := strings.Split(rel, "/")
+		cur := ""
+		parent := root
+		for _, seg := range parts {
 			if seg == "" {
 				continue
 			}
-			nextRel := seg
-			if curRel != "" {
-				nextRel = curRel + "/" + seg
+			next := seg
+			if cur != "" {
+				next = cur + "/" + seg
 			}
-			if _, ok := dirIndex[nextRel]; !ok {
-				node := &TreeNode{
-					Type:    "dir",
-					Name:    seg,
-					RelPath: nextRel,
-					Source:  source,
-				}
-				dirIndex[curRel].Children = append(dirIndex[curRel].Children, node)
-				dirIndex[nextRel] = node
+			if existing, ok := dirIndex[next]; ok {
+				parent = existing
+				cur = next
+				continue
 			}
-			curRel = nextRel
+			node := &TreeNode{Type: "dir", Name: seg, RelPath: next, Source: sourceName}
+			parent.Children = append(parent.Children, node)
+			dirIndex[next] = node
+			parent = node
+			cur = next
+		}
+		return parent
+	}
+
+	_ = filepath.WalkDir(srcPath, func(abs string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
 		}
 
-		fileNode := &TreeNode{
-			Type:    "file",
-			Name:    it.Name,
-			RelPath: it.RelPath,
-			Source:  source,
-			URL:     it.URL,
-			Size:    it.Size,
-			ModTime: it.ModTime,
+		rel, err := filepath.Rel(srcPath, abs)
+		if err != nil {
+			return nil
 		}
-		dirIndex[curRel].Children = append(dirIndex[curRel].Children, fileNode)
+		relSlash := filepath.ToSlash(rel)
+
+		ext := strings.ToLower(filepath.Ext(relSlash))
+		if ext != ".zip" && !isVideo(relSlash) {
+			return nil
+		}
+
+		parentRel := filepath.ToSlash(filepath.Dir(rel))
+		if parentRel == "." {
+			parentRel = ""
+		}
+		parent := ensureDir(parentRel)
+
+		name := d.Name()
+		if ext == ".zip" {
+			parent.Children = append(parent.Children, &TreeNode{
+				Type:    "zip",
+				Name:    name,
+				RelPath: relSlash,
+				Source:  sourceName,
+				Size:    info.Size(),
+				ModTime: info.ModTime().Unix(),
+			})
+			return nil
+		}
+
+		encodedRel := encodeURLPath(relSlash)
+		streamURL := "/stream/" + url.PathEscape(sourceName) + "/" + encodedRel
+		parent.Children = append(parent.Children, &TreeNode{
+			Type:    "file",
+			Name:    name,
+			RelPath: relSlash,
+			Source:  sourceName,
+			URL:     streamURL,
+			Size:    info.Size(),
+			ModTime: info.ModTime().Unix(),
+		})
+		return nil
+	})
+
+	// 如果 source 路径不存在，也返回空树（而不是直接报错）
+	if _, err := os.Stat(srcPath); err != nil && errors.Is(err, os.ErrNotExist) {
+		// ignore
 	}
 
 	sortTree(root)
-	return root
+	treeCache.Store(sourceName, cachedTree{at: time.Now(), root: root})
+	return root, nil
 }
 
 func sortTree(n *TreeNode) {
@@ -140,9 +222,19 @@ func sortTree(n *TreeNode) {
 		sortTree(c)
 	}
 	sort.SliceStable(n.Children, func(i, j int) bool {
-		// dir 先于 file
+		// dir 先于 zip 先于 file
 		if n.Children[i].Type != n.Children[j].Type {
-			return n.Children[i].Type == "dir"
+			rank := func(t string) int {
+				switch t {
+				case "dir":
+					return 0
+				case "zip":
+					return 1
+				default: // file
+					return 2
+				}
+			}
+			return rank(n.Children[i].Type) < rank(n.Children[j].Type)
 		}
 		return n.Children[i].Name < n.Children[j].Name
 	})
