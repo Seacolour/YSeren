@@ -1,23 +1,22 @@
-# lv-link
+# YSeren ✦
 
-一个极轻量的“本地视频文件局域网访问工具”（目标体验类似 nginx：**单个可执行文件**即可运行）。
+一个极轻量的"本地媒体文件局域网访问工具"（目标体验类似 nginx：**单个可执行文件**即可运行）。
 
 ## 功能
 
 - **/stream/**：把本地目录挂载为可播放的 HTTP 路由（浏览器/手机可直接播放，支持 Range）
 - **/api/videos**：前端用的 JSON 列表接口（递归扫描、搜索、分页）
-- **zip（MVP）**：在目录树中识别 `.zip`，由用户手动点击“解压”（仅支持 zip，解压到同目录同名文件夹）
-- **前端 UI（Svelte）**：手机适配的海报墙/搜索/最近播放
+- **视频 + 音频**：默认支持 mp4/mkv/webm/mov/avi + mp3/flac/wav/aac/ogg 等格式
+- **zip（MVP）**：在目录树中识别 `.zip`，由用户手动点击"解压"
+- **前端 UI（Svelte）**：手机适配的文件浏览/搜索/最近播放
 - **单文件交付**：Go `embed` 把 `frontend/dist` 打进 exe
 
 ## 配置
 
 默认读取配置文件：**当前目录**或 **exe 同目录**的 `v-link.yaml` / `v-link.yml`。
 
-也可以显式指定配置路径：
-
 ```bash
-lv-link.exe -config D:/path/to/v-link.yaml
+yseren.exe -config D:/path/to/v-link.yaml
 ```
 
 示例 `v-link.yaml`：
@@ -25,53 +24,32 @@ lv-link.exe -config D:/path/to/v-link.yaml
 ```yaml
 server:
   port: 1479
+  log_level: info  # debug, info, warn, error
 
 sources:
-  # 你可以只挂载一个根目录，程序会递归扫描所有子目录，并保留 relPath 层级
   - path: "D:/Videos"
 
-  # 也可以显式命名（可选）
-  # - name: "videos"
-  #   path: "D:/Videos"
+# 可选：自定义支持的媒体格式
+# media_extensions:
+#   - .mp4
+#   - .mp3
 ```
 
-## 开发/运行
-
-后端：
+## 开发
 
 ```bash
+# 后端
 go run .
+
+# 前端（需要另开终端）
+cd frontend && npm install && npm run dev
 ```
 
-前端（开发模式，需要单独起 Vite dev server）：
+## 构建
 
 ```bash
-cd frontend
-npm install
-npm run dev
+cd frontend && npm run build && cd ..
+go build -o yseren.exe
 ```
 
-## 构建（推荐：单 exe）
-
-1) 构建前端到 `frontend/dist`
-
-```bash
-cd frontend
-npm install
-npm run build
-```
-
-2) 回到项目根目录，构建后端 exe
-
-```bash
-cd ..
-go build -o lv-link.exe
-```
-
-运行后访问：
-
-- `http://<你的电脑IP>:1479/`（手机 UI）
-- `http://<你的电脑IP>:1479/api/videos`（JSON）
-- `http://<你的电脑IP>:1479/stream/<source>/...`（直链播放）
-
-
+访问 `http://localhost:1479/` 或局域网 IP。

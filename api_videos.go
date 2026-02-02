@@ -11,18 +11,21 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
-type VideoItem struct {
-	Source  string `json:"source"`
-	Name    string `json:"name"`
-	RelPath string `json:"relPath"`
-	URL     string `json:"url"`
-	Size    int64  `json:"size"`
-	ModTime int64  `json:"modTime"` // unix seconds
+type MediaItem struct {
+	Source    string `json:"source"`
+	Name      string `json:"name"`
+	RelPath   string `json:"relPath"`
+	URL       string `json:"url"`
+	Size      int64  `json:"size"`
+	ModTime   int64  `json:"modTime"`   // unix seconds
+	MediaType string `json:"mediaType"` // "video" | "audio"
 }
+
+// VideoItem is an alias for backwards compatibility
+type VideoItem = MediaItem
 
 type VideosResponse struct {
 	GeneratedAt int64       `json:"generatedAt"`
@@ -30,15 +33,16 @@ type VideosResponse struct {
 	Items       []VideoItem `json:"items"`
 }
 
-type cachedVideos struct {
-	at    time.Time
-	items []VideoItem
-}
-
-var videosCache sync.Map // key: sourceName, value: cachedVideos
+// videosCache 用于缓存视频列表，5秒 TTL，使用 singleflight 防止缓存击穿
+var videosCache = NewCache[[]MediaItem](5 * time.Second)
 
 func ListVideosHandler(conf *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
 		// query params
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
 		source := strings.TrimSpace(r.URL.Query().Get("source"))
@@ -61,7 +65,7 @@ func ListVideosHandler(conf *Config) http.HandlerFunc {
 		if source != "" {
 			items, err = listVideosForSource(conf, source, refresh)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 		} else {
@@ -69,6 +73,7 @@ func ListVideosHandler(conf *Config) http.HandlerFunc {
 				srcItems, e := listVideosForSource(conf, src.Name, refresh)
 				if e != nil {
 					// 单个源失败不影响其它源（例如路径不存在）
+					LogWarn("构建媒体列表失败，已跳过", "source", src.Name, "error", e)
 					continue
 				}
 				items = append(items, srcItems...)
@@ -116,29 +121,25 @@ func ListVideosHandler(conf *Config) http.HandlerFunc {
 }
 
 func listVideosForSource(conf *Config, sourceName string, refresh bool) ([]VideoItem, error) {
-	var srcPath string
-	for _, s := range conf.Sources {
-		if s.Name == sourceName {
-			srcPath = s.Path
-			break
-		}
-	}
-	if srcPath == "" {
+	srcPath, ok := conf.GetSourcePath(sourceName)
+	if !ok {
 		return nil, errors.New("unknown source: " + sourceName)
 	}
 
-	// cache: 5s TTL (可按需调大)
-	const ttl = 5 * time.Second
-	if !refresh {
-		if v, ok := videosCache.Load(sourceName); ok {
-			c := v.(cachedVideos)
-			if time.Since(c.at) <= ttl {
-				return c.items, nil
-			}
-		}
+	// 强制刷新时删除缓存
+	if refresh {
+		videosCache.Delete(sourceName)
 	}
 
-	items := make([]VideoItem, 0, 1024)
+	return videosCache.Get(sourceName, func() ([]MediaItem, error) {
+		return buildVideosForPath(conf, sourceName, srcPath)
+	})
+}
+
+// buildVideosForPath 实际构建视频列表（无缓存）
+func buildVideosForPath(conf *Config, sourceName, srcPath string) ([]MediaItem, error) {
+
+	items := make([]MediaItem, 0, 1024)
 	err := filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // 跳过不可访问路径
@@ -147,8 +148,14 @@ func listVideosForSource(conf *Config, sourceName string, refresh bool) ([]Video
 			return nil
 		}
 		name := d.Name()
-		if !isVideo(name) {
+		if !conf.IsMediaFile(name) {
 			return nil
+		}
+
+		// 判断媒体类型
+		mediaType := "video"
+		if IsAudioFile(name) {
+			mediaType = "audio"
 		}
 
 		info, e := d.Info()
@@ -164,13 +171,14 @@ func listVideosForSource(conf *Config, sourceName string, refresh bool) ([]Video
 		encodedRel := encodeURLPath(relSlash)
 		streamURL := "/stream/" + url.PathEscape(sourceName) + "/" + encodedRel
 
-		items = append(items, VideoItem{
-			Source:  sourceName,
-			Name:    name,
-			RelPath: relSlash,
-			URL:     streamURL,
-			Size:    info.Size(),
-			ModTime: info.ModTime().Unix(),
+		items = append(items, MediaItem{
+			Source:    sourceName,
+			Name:      name,
+			RelPath:   relSlash,
+			URL:       streamURL,
+			Size:      info.Size(),
+			ModTime:   info.ModTime().Unix(),
+			MediaType: mediaType,
 		})
 		return nil
 	})
@@ -178,18 +186,7 @@ func listVideosForSource(conf *Config, sourceName string, refresh bool) ([]Video
 		// WalkDir 只在回调返回 error 时才会透出；这里理论上很少触发
 	}
 
-	videosCache.Store(sourceName, cachedVideos{at: time.Now(), items: items})
 	return items, nil
-}
-
-func isVideo(filename string) bool {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi":
-		return true
-	default:
-		return false
-	}
 }
 
 func parseIntDefault(s string, def int) int {

@@ -10,19 +10,19 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 )
 
 type TreeNode struct {
-	Type     string      `json:"type"` // "dir" | "file" | "zip"
-	Name     string      `json:"name"`
-	RelPath  string      `json:"relPath"`
-	Source   string      `json:"source,omitempty"`
-	URL      string      `json:"url,omitempty"`
-	Size     int64       `json:"size,omitempty"`
-	ModTime  int64       `json:"modTime,omitempty"`
-	Children []*TreeNode `json:"children,omitempty"`
+	Type      string      `json:"type"` // "dir" | "file" | "zip"
+	Name      string      `json:"name"`
+	RelPath   string      `json:"relPath"`
+	Source    string      `json:"source,omitempty"`
+	URL       string      `json:"url,omitempty"`
+	Size      int64       `json:"size,omitempty"`
+	ModTime   int64       `json:"modTime,omitempty"`
+	MediaType string      `json:"mediaType,omitempty"` // "video" | "audio" (only for file type)
+	Children  []*TreeNode `json:"children,omitempty"`
 }
 
 type TreeResponse struct {
@@ -31,18 +31,19 @@ type TreeResponse struct {
 	Root        *TreeNode `json:"root"`
 }
 
-type cachedTree struct {
-	at   time.Time
-	root *TreeNode
-}
-
-var treeCache sync.Map // key: sourceName, value: cachedTree
+// treeCache 用于缓存目录树，5秒 TTL，使用 singleflight 防止缓存击穿
+var treeCache = NewCache[*TreeNode](5 * time.Second)
 
 // GET /api/tree?source=xxx&q=xxx&refresh=1
 // - source 为空：返回一个虚拟 root，children 是每个 source 的 root 目录
 // - q 为可选搜索词（匹配 name/relPath），会“裁剪树”仅保留命中的路径与祖先
 func ListTreeHandler(conf *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
 		source := strings.TrimSpace(r.URL.Query().Get("source"))
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
 		refresh := r.URL.Query().Get("refresh") == "1"
@@ -51,7 +52,7 @@ func ListTreeHandler(conf *Config) http.HandlerFunc {
 		if source != "" {
 			srcRoot, err := buildBrowsableTreeForSource(conf, source, refresh)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			root = srcRoot
@@ -66,6 +67,8 @@ func ListTreeHandler(conf *Config) http.HandlerFunc {
 			for _, src := range conf.Sources {
 				srcRoot, err := buildBrowsableTreeForSource(conf, src.Name, refresh)
 				if err != nil {
+					// 乐观策略：单个源失败不影响整体；但记录日志方便排障
+					LogWarn("构建目录树失败，已跳过", "source", src.Name, "error", err)
 					continue
 				}
 				if q != "" {
@@ -90,27 +93,23 @@ func ListTreeHandler(conf *Config) http.HandlerFunc {
 }
 
 func buildBrowsableTreeForSource(conf *Config, sourceName string, refresh bool) (*TreeNode, error) {
-	var srcPath string
-	for _, s := range conf.Sources {
-		if s.Name == sourceName {
-			srcPath = s.Path
-			break
-		}
-	}
-	if srcPath == "" {
+	srcPath, ok := conf.GetSourcePath(sourceName)
+	if !ok {
 		return nil, errors.New("unknown source: " + sourceName)
 	}
 
-	// cache: 5s TTL
-	const ttl = 5 * time.Second
-	if !refresh {
-		if v, ok := treeCache.Load(sourceName); ok {
-			c := v.(cachedTree)
-			if time.Since(c.at) <= ttl && c.root != nil {
-				return c.root, nil
-			}
-		}
+	// 强制刷新时删除缓存
+	if refresh {
+		treeCache.Delete(sourceName)
 	}
+
+	return treeCache.Get(sourceName, func() (*TreeNode, error) {
+		return buildTreeForPath(conf, sourceName, srcPath)
+	})
+}
+
+// buildTreeForPath 实际构建目录树（无缓存）
+func buildTreeForPath(conf *Config, sourceName, srcPath string) (*TreeNode, error) {
 
 	root := &TreeNode{Type: "dir", Name: sourceName, RelPath: "", Source: sourceName}
 	dirIndex := map[string]*TreeNode{"": root}
@@ -167,7 +166,7 @@ func buildBrowsableTreeForSource(conf *Config, sourceName string, refresh bool) 
 		relSlash := filepath.ToSlash(rel)
 
 		ext := strings.ToLower(filepath.Ext(relSlash))
-		if ext != ".zip" && !isVideo(relSlash) {
+		if ext != ".zip" && !conf.IsMediaFile(relSlash) {
 			return nil
 		}
 
@@ -192,14 +191,19 @@ func buildBrowsableTreeForSource(conf *Config, sourceName string, refresh bool) 
 
 		encodedRel := encodeURLPath(relSlash)
 		streamURL := "/stream/" + url.PathEscape(sourceName) + "/" + encodedRel
+		mediaType := "video"
+		if IsAudioFile(name) {
+			mediaType = "audio"
+		}
 		parent.Children = append(parent.Children, &TreeNode{
-			Type:    "file",
-			Name:    name,
-			RelPath: relSlash,
-			Source:  sourceName,
-			URL:     streamURL,
-			Size:    info.Size(),
-			ModTime: info.ModTime().Unix(),
+			Type:      "file",
+			Name:      name,
+			RelPath:   relSlash,
+			Source:    sourceName,
+			URL:       streamURL,
+			Size:      info.Size(),
+			ModTime:   info.ModTime().Unix(),
+			MediaType: mediaType,
 		})
 		return nil
 	})
@@ -210,7 +214,6 @@ func buildBrowsableTreeForSource(conf *Config, sourceName string, refresh bool) 
 	}
 
 	sortTree(root)
-	treeCache.Store(sourceName, cachedTree{at: time.Now(), root: root})
 	return root, nil
 }
 

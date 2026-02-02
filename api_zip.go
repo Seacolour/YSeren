@@ -28,28 +28,28 @@ type ZipExtractResponse struct {
 func ZipExtractHandler(conf *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		var req ZipExtractRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad json", http.StatusBadRequest)
+			WriteError(w, http.StatusBadRequest, "bad json")
 			return
 		}
 		req.Source = strings.TrimSpace(req.Source)
 		req.RelPath = strings.Trim(strings.ReplaceAll(req.RelPath, "\\", "/"), "/")
 		if req.Source == "" || req.RelPath == "" {
-			http.Error(w, "missing source/relPath", http.StatusBadRequest)
+			WriteError(w, http.StatusBadRequest, "missing source/relPath")
 			return
 		}
 		if !strings.HasSuffix(strings.ToLower(req.RelPath), ".zip") {
-			http.Error(w, "not a .zip file", http.StatusBadRequest)
+			WriteError(w, http.StatusBadRequest, "not a .zip file")
 			return
 		}
 
 		absZip, absDst, dstRel, err := resolveZipPaths(conf, req.Source, req.RelPath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
@@ -64,7 +64,7 @@ func ZipExtractHandler(conf *Config) http.HandlerFunc {
 		}
 
 		if err := unzipTo(absZip, absDst); err != nil {
-			writeJSON(w, ZipExtractResponse{Status: "error", Message: err.Error()})
+			WriteError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
@@ -81,14 +81,8 @@ func ZipExtractHandler(conf *Config) http.HandlerFunc {
 }
 
 func resolveZipPaths(conf *Config, sourceName, relSlash string) (absZip string, absDst string, dstRel string, err error) {
-	var srcPath string
-	for _, s := range conf.Sources {
-		if s.Name == sourceName {
-			srcPath = s.Path
-			break
-		}
-	}
-	if srcPath == "" {
+	srcPath, ok := conf.GetSourcePath(sourceName)
+	if !ok {
 		return "", "", "", errors.New("unknown source: " + sourceName)
 	}
 
@@ -96,18 +90,7 @@ func resolveZipPaths(conf *Config, sourceName, relSlash string) (absZip string, 
 	absZip = filepath.Join(srcPath, relOS)
 
 	// 安全校验：确保 absZip 在 srcPath 内（防路径穿越）
-	srcAbs, err := filepath.Abs(srcPath)
-	if err != nil {
-		return "", "", "", err
-	}
-	zipAbs, err := filepath.Abs(absZip)
-	if err != nil {
-		return "", "", "", err
-	}
-	srcAbs = filepath.Clean(srcAbs) + string(filepath.Separator)
-	zipAbs = filepath.Clean(zipAbs)
-	if !strings.HasPrefix(strings.ToLower(zipAbs), strings.ToLower(strings.TrimRight(srcAbs, string(filepath.Separator)))) &&
-		!strings.HasPrefix(strings.ToLower(zipAbs)+string(filepath.Separator), strings.ToLower(srcAbs)) {
+	if !IsPathSafe(srcPath, absZip) {
 		return "", "", "", errors.New("invalid path")
 	}
 
@@ -140,12 +123,6 @@ func unzipTo(zipPath, dstDir string) error {
 		return err
 	}
 
-	dstAbs, err := filepath.Abs(dstDir)
-	if err != nil {
-		return err
-	}
-	dstAbs = filepath.Clean(dstAbs) + string(filepath.Separator)
-
 	for _, f := range r.File {
 		name := filepath.FromSlash(f.Name)
 		if name == "" || name == "." {
@@ -153,13 +130,7 @@ func unzipTo(zipPath, dstDir string) error {
 		}
 		// ZipSlip 防护：目标路径必须在 dstDir 内
 		target := filepath.Join(dstDir, name)
-		targetAbs, err := filepath.Abs(target)
-		if err != nil {
-			return err
-		}
-		targetAbs = filepath.Clean(targetAbs)
-		if !strings.HasPrefix(strings.ToLower(targetAbs)+string(filepath.Separator), strings.ToLower(dstAbs)) &&
-			strings.ToLower(targetAbs) != strings.ToLower(strings.TrimRight(dstAbs, string(filepath.Separator))) {
+		if !IsPathSafe(dstDir, target) {
 			return errors.New("zip contains invalid path")
 		}
 
