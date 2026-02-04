@@ -8,14 +8,24 @@ import (
 )
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			WriteCrashLog(fmt.Sprintf("panic: %v", r), nil)
+			panic(r)
+		}
+	}()
+
 	// 1. 加载配置：支持 -config 指定；默认按"当前目录 -> exe 同目录"查找 v-link.yaml/yml
 	configPath := flag.String("config", "", "配置文件路径（默认查找 v-link.yaml 或 v-link.yml：当前目录 -> exe 同目录）")
 	flag.Parse()
 
 	conf, usedPath, err := LoadConfigAuto(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "无法加载配置文件: %v\n", err)
-		os.Exit(1)
+		errMsg := fmt.Sprintf("无法加载配置文件: %v", err)
+		fmt.Fprintln(os.Stderr, errMsg)
+		WriteCrashLog(errMsg, err)
+		startErrorServer(errMsg)
+		return
 	}
 
 	// 初始化日志系统
@@ -69,6 +79,26 @@ func main() {
 	LogInfo("服务启动", "addr", addr, "port", conf.Server.Port)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		LogError("服务启动失败", "error", err)
+		WriteCrashLog("服务启动失败", err)
+		os.Exit(1)
+	}
+}
+
+func startErrorServer(message string) {
+	const fallbackPort = 1479
+	addr := fmt.Sprintf(":%d", fallbackPort)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", ErrorFrontendHandler(message))
+
+	fmt.Println()
+	fmt.Printf("  ✦ YSeren - 启动失败\n")
+	fmt.Printf("  ─────────────────────\n")
+	fmt.Printf("请打开浏览器查看错误信息: http://localhost:%d/\n", fallbackPort)
+
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		WriteCrashLog("启动错误页失败", err)
+		fmt.Fprintf(os.Stderr, "启动错误页失败: %v\n", err)
 		os.Exit(1)
 	}
 }

@@ -125,3 +125,16 @@ func newCopyURL(u *url.URL) *url.URL {
 	u2 := *u
 	return &u2
 }
+
+func ErrorFrontendHandler(message string) http.Handler {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "启动失败：未知错误"
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>YSeren 启动失败</title><style>body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;background:#f6f7fb;color:#1a1a1a;margin:0;padding:40px;} .card{max-width:720px;margin:0 auto;background:#fff;border-radius:16px;padding:28px 32px;box-shadow:0 8px 30px rgba(0,0,0,.08);} h1{font-size:22px;margin:0 0 12px;} p{margin:0 0 12px;line-height:1.6;} pre{background:#f1f3f7;border-radius:10px;padding:12px;white-space:pre-wrap;word-break:break-word;}</style></head><body><div class=\"card\"><h1>YSeren 启动失败</h1><p>应用未能正常启动，请检查配置文件或目录权限。</p><pre>"))
+		_, _ = w.Write([]byte(message))
+		_, _ = w.Write([]byte("</pre><p>建议：在当前目录或 exe 同目录放置 v-link.yaml，或使用 -config 指定路径。</p></div></body></html>"))
+	})
+}

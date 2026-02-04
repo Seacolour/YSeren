@@ -21,9 +21,6 @@
     let restoredOnce = false;
     let lastWriteAt = 0;
 
-    // UI：小进度显示（不依赖“最近播放”）
-    let uiTime = $state(0);
-    let uiDuration = $state(0);
     let resumeToast = $state("");
 
     function syncForMediaId() {
@@ -31,8 +28,6 @@
         trackedId = mediaId;
         restoredOnce = false;
         lastWriteAt = 0;
-        uiTime = 0;
-        uiDuration = 0;
         resumeToast = "";
     }
 
@@ -55,7 +50,6 @@
             return;
         }
         const d = Number.isFinite(mediaEl.duration) ? mediaEl.duration : Number(p.d) || 0;
-        uiDuration = d || 0;
         // 接近片尾就不恢复（避免一打开就结束）
         if (d > 0 && d - p.t < 10) {
             restoredOnce = true;
@@ -64,7 +58,6 @@
         const safeT = Math.max(0, Math.min(Number(p.t) || 0, d > 1 ? d - 1 : Number(p.t) || 0));
         if (safeT > 1) {
             mediaEl.currentTime = safeT;
-            uiTime = safeT;
             resumeToast = `已从 ${formatTime(safeT)} 继续播放`;
             setTimeout(() => {
                 // 轻量：不做复杂的计时取消；内容变了也无所谓
@@ -77,8 +70,6 @@
     function onTimeUpdate() {
         syncForMediaId();
         if (!mediaEl || !mediaId) return;
-        uiTime = mediaEl.currentTime || 0;
-        uiDuration = Number.isFinite(mediaEl.duration) ? mediaEl.duration : 0;
         const now = Date.now();
         if (now - lastWriteAt < 2000) return; // 2s 节流
         lastWriteAt = now;
@@ -105,10 +96,6 @@
         const pad2 = (n) => String(n).padStart(2, "0");
         return hh > 0 ? `${hh}:${pad2(mm)}:${pad2(ss)}` : `${mm}:${pad2(ss)}`;
     }
-
-    let progressPct = $derived(
-        uiDuration > 0 ? Math.max(0, Math.min(100, (uiTime / uiDuration) * 100)) : 0,
-    );
 </script>
 
 <main class="player">
@@ -147,12 +134,6 @@
             </video>
             {#if resumeToast}
                 <div class="toast">{resumeToast}</div>
-            {/if}
-            {#if uiDuration > 0}
-                <div class="mini-progress" aria-hidden="true">
-                    <div class="mini-progress-bar" style={`width:${progressPct}%`}></div>
-                    <div class="mini-progress-text">{formatTime(uiTime)} / {formatTime(uiDuration)}</div>
-                </div>
             {/if}
         </div>
     {/if}
@@ -214,37 +195,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-    .mini-progress {
-        position: absolute;
-        left: 12px;
-        right: 12px;
-        bottom: 12px;
-        height: 10px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.18);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        overflow: hidden;
-        pointer-events: none;
-    }
-    .mini-progress-bar {
-        height: 100%;
-        background: rgba(122, 162, 255, 0.85);
-        border-radius: 999px;
-        width: 0%;
-    }
-    .mini-progress-text {
-        position: absolute;
-        right: 10px;
-        top: -24px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: rgba(0, 0, 0, 0.55);
-        color: #fff;
-        font-size: var(--font-size-xs);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(8px);
-        pointer-events: none;
     }
     .audio-container {
         display: flex;
