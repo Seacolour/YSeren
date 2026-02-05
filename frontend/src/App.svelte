@@ -4,8 +4,6 @@
   import Breadcrumb from "./components/Breadcrumb.svelte";
   import FileList from "./components/FileList.svelte";
   import Skeleton from "./components/Skeleton.svelte";
-  import Playlist from "./components/Playlist.svelte";
-  import { playlist, getNextItem } from "./playlist.svelte.js";
 
   let q = $state("");
   let loading = $state(false);
@@ -14,70 +12,174 @@
   // Tree API data
   let treeRoot = $state(null);
   let nav = $state([]);
-  let nodeByURL = $state({});
+  let fileByKey = $state({});
+  let dirByKey = $state({});
+  let parentByDirKey = $state({});
 
   let selected = $state(null);
   let notice = $state("");
-  let showPlaylist = $state(false);
 
   /** @type {AbortController | null} */
   let ac = null;
   let firstQueryRun = true;
 
+  const QS = Object.freeze({
+    dirSource: "ds",
+    dirRelPath: "dp",
+    playSource: "ps",
+    playRelPath: "pp",
+  });
+
+  function makeKey(source, relPath) {
+    return `${source || ""}::${relPath || ""}`;
+  }
+
+  function readURLState() {
+    const u = new URL(window.location.href);
+    const ds = u.searchParams.get(QS.dirSource) || "";
+    const dp = u.searchParams.get(QS.dirRelPath) || "";
+    const ps = u.searchParams.get(QS.playSource) || "";
+    const pp = u.searchParams.get(QS.playRelPath) || "";
+    return { ds, dp, ps, pp };
+  }
+
+  function writeURLState(next, { replace = false } = {}) {
+    const u = new URL(window.location.href);
+
+    // directory
+    if (next?.ds) u.searchParams.set(QS.dirSource, next.ds);
+    else u.searchParams.delete(QS.dirSource);
+    if (next?.dp) u.searchParams.set(QS.dirRelPath, next.dp);
+    else u.searchParams.delete(QS.dirRelPath);
+
+    // player
+    if (next?.ps) u.searchParams.set(QS.playSource, next.ps);
+    else u.searchParams.delete(QS.playSource);
+    if (next?.pp) u.searchParams.set(QS.playRelPath, next.pp);
+    else u.searchParams.delete(QS.playRelPath);
+
+    const url = u.pathname + (u.searchParams.toString() ? `?${u.searchParams.toString()}` : "") + u.hash;
+    if (replace) history.replaceState(null, "", url);
+    else history.pushState(null, "", url);
+  }
+
   function indexTree(root) {
-    const map = {};
-    function walk(node) {
-      if (node.type === "file" && node.url) {
-        map[node.url] = node;
+    const files = {};
+    const dirs = {};
+    const parents = {};
+
+    function walk(node, parent) {
+      if (node?.type === "file" && node?.source && node?.relPath) {
+        files[makeKey(node.source, node.relPath)] = node;
       }
-      if (node.children) {
-        for (const c of node.children) walk(c);
+      if (node?.type === "dir") {
+        // root/virtual-root 也会是 dir；这里允许 source 为空
+        const k = makeKey(node?.source || "", node?.relPath || "");
+        dirs[k] = node;
+        if (parent?.type === "dir") {
+          const pk = makeKey(parent?.source || "", parent?.relPath || "");
+          parents[k] = pk;
+        }
+      }
+      if (node?.children) {
+        for (const c of node.children) walk(c, node);
       }
     }
-    walk(root);
-    return map;
+
+    walk(root, null);
+    return { files, dirs, parents };
   }
 
-  function openPlayer(node) {
-    selected = node;
-    showPlaylist = false;
+  function buildNavToDir(targetKey) {
+    // 用 parentByDirKey 回溯到根，再反转
+    const chain = [];
+    let k = targetKey;
+    const seen = new Set();
+    while (k && !seen.has(k)) {
+      seen.add(k);
+      const n = dirByKey[k];
+      if (n) chain.push(n);
+      k = parentByDirKey[k];
+    }
+    chain.reverse();
+    return chain;
   }
 
-  function closePlayer() {
-    selected = null;
-  }
+  function syncStateFromURL({ replace = true } = {}) {
+    if (!treeRoot) return;
+    const { ds, dp, ps, pp } = readURLState();
 
-  function onPlayerEnded() {
-    if (!selected) return;
-    const next = getNextItem(selected.url);
-    if (next) {
-      selected = next;
-    } else {
+    // 1) 恢复目录（仅在非搜索状态下）
+    if (!q?.trim()) {
+      if (ds) {
+        const targetKey = makeKey(ds, dp);
+        const chain = buildNavToDir(targetKey);
+        if (chain.length) {
+          nav = chain;
+        } else {
+          nav = [treeRoot];
+          // URL 指向不存在的目录时，清理掉，避免一直“恢复失败”
+          writeURLState({ ds: "", dp: "", ps, pp }, { replace });
+        }
+      } else if (treeRoot && (!nav?.length || nav[0] !== treeRoot)) {
+        nav = [treeRoot];
+      }
+    }
+
+    // 2) 恢复播放器
+    if (ps && pp) {
+      const node = fileByKey[makeKey(ps, pp)];
+      if (node) selected = node;
+      else if (selected) selected = null;
+    } else if (selected) {
       selected = null;
     }
   }
 
+  function openPlayer(node) {
+    selected = node;
+    // 把播放状态写进 URL，刷新/返回时可恢复
+    if (node?.source && node?.relPath) {
+      const { ds, dp } = readURLState();
+      writeURLState({ ds, dp, ps: node.source, pp: node.relPath });
+    }
+  }
+
+  function closePlayer() {
+    selected = null;
+    const { ds, dp } = readURLState();
+    writeURLState({ ds, dp, ps: "", pp: "" });
+  }
+
   function enterDir(node) {
     nav = [...nav, node];
+    if (!q?.trim()) {
+      const { ps, pp } = readURLState();
+      writeURLState(
+        { ds: node?.source || "", dp: node?.relPath || "", ps, pp },
+        { replace: true },
+      );
+    }
   }
 
   function goToCrumb(index) {
     nav = nav.slice(0, index + 1);
+    if (!q?.trim()) {
+      const node = nav[index];
+      const { ps, pp } = readURLState();
+      writeURLState(
+        { ds: node?.source || "", dp: node?.relPath || "", ps, pp },
+        { replace: true },
+      );
+    }
   }
-
-  // "name" | "modTime"
-  let sortBy = $state("name");
 
   let currentDir = $derived(nav.length ? nav[nav.length - 1] : null);
   let currentChildren = $derived(
     currentDir?.children?.slice().sort((a, b) => {
       const ta = a.type === "dir" ? 0 : 1;
       const tb = b.type === "dir" ? 0 : 1;
-      if (ta !== tb) return ta - tb;
-      if (sortBy === "modTime") {
-        return (b.modTime || 0) - (a.modTime || 0);
-      }
-      return a.name.localeCompare(b.name, "zh-Hans-CN");
+      return ta - tb || a.name.localeCompare(b.name, "zh-Hans-CN");
     }) || [],
   );
 
@@ -93,11 +195,16 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       treeRoot = data.root;
-      nodeByURL = indexTree(treeRoot);
+      const idx = indexTree(treeRoot);
+      fileByKey = idx.files;
+      dirByKey = idx.dirs;
+      parentByDirKey = idx.parents;
 
-      // 每次拿到新树都重置 nav 到根节点（搜索结果也是一棵新树）
-      if (treeRoot) {
-        nav = [treeRoot];
+      // 搜索时不改 nav；首屏时若 treeRoot 是虚拟根目录，则展开到那里
+      if (!query && treeRoot) {
+        // 先尝试从 URL 恢复目录/播放器；不成功再回退默认 root
+        syncStateFromURL({ replace: true });
+        if (!nav?.length) nav = [treeRoot];
       }
     } catch (e) {
       if (e.name !== "AbortError") {
@@ -141,37 +248,28 @@
     const t = setTimeout(() => fetchTree(query), 250);
     return () => clearTimeout(t);
   });
+
+  // 监听浏览器前进/后退：按 URL 恢复目录/播放器
+  $effect(() => {
+    const onPop = () => syncStateFromURL({ replace: true });
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  });
 </script>
 
 <div class="app">
   <Topbar bind:searchQuery={q} />
 
   {#if selected}
-    <Player item={selected} onClose={closePlayer} onEnded={onPlayerEnded} />
+    <Player item={selected} onClose={closePlayer} />
   {:else}
     <main class="content">
       <section class="section">
-        <div class="section-header">
-          <div class="section-title">
-            文件浏览
-            <span class="muted">
-              （{loading ? "加载中…" : q?.trim() ? "搜索结果" : "目录树"}）
-            </span>
-          </div>
-          <div class="sort-toggle">
-            <button
-              type="button"
-              class="sort-btn"
-              class:active={sortBy === "name"}
-              onclick={() => (sortBy = "name")}
-            >名称</button>
-            <button
-              type="button"
-              class="sort-btn"
-              class:active={sortBy === "modTime"}
-              onclick={() => (sortBy = "modTime")}
-            >最近修改</button>
-          </div>
+        <div class="section-title">
+          文件浏览
+          <span class="muted">
+            （{loading ? "加载中…" : q?.trim() ? "搜索结果" : "目录树"}）
+          </span>
         </div>
 
         {#if notice}
@@ -204,20 +302,6 @@
       </section>
     </main>
   {/if}
-
-  {#if playlist.items.length > 0 && !showPlaylist}
-    <button
-      type="button"
-      class="playlist-fab"
-      onclick={() => (showPlaylist = true)}
-    >
-      ▶ {playlist.items.length}
-    </button>
-  {/if}
-
-  {#if showPlaylist}
-    <Playlist onPlay={openPlayer} onClose={() => (showPlaylist = false)} />
-  {/if}
 </div>
 
 <style>
@@ -235,13 +319,6 @@
     display: grid;
     gap: var(--space-sm);
   }
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
-  }
   .section-title {
     font-weight: 700;
     margin: 6px 0 0;
@@ -249,29 +326,6 @@
   .muted {
     font-weight: 400;
     color: var(--color-text-muted);
-  }
-  .sort-toggle {
-    display: flex;
-    gap: 2px;
-    background: var(--color-border);
-    border-radius: var(--radius-md);
-    padding: 2px;
-  }
-  .sort-btn {
-    padding: var(--space-xs) var(--space-sm);
-    border: none;
-    border-radius: calc(var(--radius-md) - 2px);
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-  .sort-btn.active {
-    background: var(--color-bg-card, #fff);
-    color: var(--color-text);
-    font-weight: 600;
-    box-shadow: 0 1px 2px rgba(0,0,0,.08);
   }
 
   .path {
@@ -296,29 +350,5 @@
   .empty {
     padding: var(--space-md) var(--space-sm);
     color: var(--color-text-muted);
-  }
-
-  .playlist-fab {
-    position: fixed;
-    bottom: var(--space-lg, 24px);
-    right: var(--space-lg, 24px);
-    z-index: 80;
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--color-border-strong, #555);
-    border-radius: 999px;
-    background: var(--color-bg-card, #222);
-    color: var(--color-text, #fff);
-    font-weight: 700;
-    font-size: var(--font-size-base);
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    transition: transform 0.15s, box-shadow 0.15s;
-  }
-  .playlist-fab:hover {
-    transform: scale(1.05);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
   }
 </style>

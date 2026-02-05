@@ -48,8 +48,16 @@ cd frontend && npm install && npm run dev
 ## 构建
 
 ```bash
-cd frontend && npm run build && cd ..
-go build -o yseren.exe
+# 一键构建（推荐，会自动先 build 前端再 go build）
+.\build.ps1
+# 或者双击 build.cmd
+
+# 也支持自定义输出名
+.\build.ps1 -Out lv-link.exe
+
+# 如果你坚持手动构建，记得顺序必须是：
+# 1) cd frontend && npm ci && npm run build && cd ..
+# 2) go build -o yseren.exe
 ```
 
 访问 `http://localhost:1479/` 或局域网 IP。
