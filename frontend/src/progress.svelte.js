@@ -1,5 +1,3 @@
-import { get, writable } from "svelte/store";
-
 const LS_KEY = "yseren:progress:v1";
 const MAX_ITEMS = 500;
 
@@ -41,7 +39,8 @@ function prune(data) {
   }
 }
 
-export const progressStore = writable(loadAll().items);
+// 用对象包装，只修改 .items 属性（Svelte 5 不允许导出被重新赋值的 $state）
+export const progressState = $state({ items: loadAll().items });
 
 export function makeMediaId(item) {
   // 优先用 source+relPath（更稳定），否则退化到 url
@@ -54,8 +53,7 @@ export function makeMediaId(item) {
 
 export function getProgress(id) {
   if (!id) return null;
-  const items = get(progressStore);
-  return items[id] || null;
+  return progressState.items[id] || null;
 }
 
 export function setProgress(id, t, d, ended = false) {
@@ -70,7 +68,7 @@ export function setProgress(id, t, d, ended = false) {
   };
   prune(data);
   saveAll(data);
-  progressStore.set({ ...data.items });
+  progressState.items = { ...data.items };
 }
 
 export function clearProgress(id) {
@@ -79,6 +77,6 @@ export function clearProgress(id) {
   if (data.items[id]) {
     delete data.items[id];
     saveAll(data);
-    progressStore.set({ ...data.items });
+    progressState.items = { ...data.items };
   }
 }

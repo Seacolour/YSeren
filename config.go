@@ -46,6 +46,11 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// 端口默认值
+	if conf.Server.Port == 0 {
+		conf.Server.Port = 1479
+	}
+
 	// 如果没有配置 media_extensions，使用默认值
 	if len(conf.MediaExtensions) == 0 {
 		conf.MediaExtensions = DefaultMediaExtensions

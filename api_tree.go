@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -112,6 +111,13 @@ func buildBrowsableTreeForSource(conf *Config, sourceName string, refresh bool) 
 func buildTreeForPath(conf *Config, sourceName, srcPath string) (*TreeNode, error) {
 
 	root := &TreeNode{Type: "dir", Name: sourceName, RelPath: "", Source: sourceName}
+
+	// 路径不存在时直接返回空树
+	if _, err := os.Stat(srcPath); err != nil {
+		LogWarn("source 路径不存在，返回空树", "source", sourceName, "path", srcPath, "error", err)
+		return root, nil
+	}
+
 	dirIndex := map[string]*TreeNode{"": root}
 
 	ensureDir := func(rel string) *TreeNode {
@@ -190,7 +196,7 @@ func buildTreeForPath(conf *Config, sourceName, srcPath string) (*TreeNode, erro
 		}
 
 		encodedRel := encodeURLPath(relSlash)
-		streamURL := "/stream/" + url.PathEscape(sourceName) + "/" + encodedRel
+		streamURL := "/stream/" + sourceName + "/" + encodedRel
 		mediaType := "video"
 		if IsAudioFile(name) {
 			mediaType = "audio"
@@ -207,11 +213,6 @@ func buildTreeForPath(conf *Config, sourceName, srcPath string) (*TreeNode, erro
 		})
 		return nil
 	})
-
-	// 如果 source 路径不存在，也返回空树（而不是直接报错）
-	if _, err := os.Stat(srcPath); err != nil && errors.Is(err, os.ErrNotExist) {
-		// ignore
-	}
 
 	sortTree(root)
 	return root, nil

@@ -6,7 +6,7 @@ import (
 )
 
 // Logger 是全局日志实例
-var Logger *slog.Logger
+var Logger = slog.Default()
 
 // InitLogger 初始化日志系统
 // level: "debug", "info", "warn", "error"

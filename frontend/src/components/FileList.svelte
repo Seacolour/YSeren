@@ -18,37 +18,13 @@
      * }} */
     let { items, onEnterDir, onPlayFile, onExtractZip } = $props();
 
-    import { makeMediaId, progressStore } from "../progress.js";
+    import { makeMediaId, progressState } from "../progress.svelte.js";
+    import { formatSize, formatTime } from "../utils.js";
+    import { addToPlaylist, isInPlaylist } from "../playlist.svelte.js";
 
-    // 关键：订阅 store，并把值落到本地 state，确保进度更新会触发重渲染
-    let allProgress = $state({});
-    $effect(() => {
-        const unsub = progressStore.subscribe((v) => {
-            allProgress = v || {};
-        });
-        return unsub;
-    });
-
-    function formatSize(bytes) {
-        if (!Number.isFinite(bytes)) return "";
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        let v = bytes;
-        let i = 0;
-        while (v >= 1024 && i < units.length - 1) {
-            v /= 1024;
-            i++;
-        }
-        const n = i === 0 ? String(Math.round(v)) : v.toFixed(v >= 10 ? 1 : 2);
-        return `${n} ${units[i]}`;
-    }
-
-    function formatTime(sec) {
-        const s = Math.max(0, Math.floor(Number(sec) || 0));
-        const hh = Math.floor(s / 3600);
-        const mm = Math.floor((s % 3600) / 60);
-        const ss = s % 60;
-        const pad2 = (n) => String(n).padStart(2, "0");
-        return hh > 0 ? `${hh}:${pad2(mm)}:${pad2(ss)}` : `${mm}:${pad2(ss)}`;
+    function handleAddToPlaylist(e, item) {
+        e.stopPropagation();
+        addToPlaylist(item);
     }
 
     function nodeKey(item) {
@@ -67,7 +43,7 @@
     function getItemProgress(item) {
         if (!item || item.type !== "file") return null;
         const id = makeMediaId(item);
-        const p = (allProgress && id && allProgress[id]) || null;
+        const p = (id && progressState.items[id]) || null;
         if (!p || !Number.isFinite(p.t) || !Number.isFinite(p.d) || p.d <= 0) return null;
         const pct = Math.max(0, Math.min(100, (p.t / p.d) * 100));
         if (pct < 0.1) return null;
@@ -106,29 +82,38 @@
             </div>
         {:else}
             {@const p = getItemProgress(it)}
-            <button type="button" class="row" onclick={() => onPlayFile(it)}>
-                <div class="icon file">
-                    {it.mediaType === "audio" ? "🎵" : "▶"}
-                </div>
-                <div class="row-main">
-                    <div class="row-title">{it.name}</div>
-                    <div class="row-sub">
-                        {it.relPath}
-                        {#if it.size}
-                            <span class="dot">·</span>
-                            {formatSize(it.size)}
+            <div class="row file-row">
+                <button type="button" class="file-play-area" onclick={() => onPlayFile(it)}>
+                    <div class="icon file">
+                        {it.mediaType === "audio" ? "🎵" : "▶"}
+                    </div>
+                    <div class="row-main">
+                        <div class="row-title">{it.name}</div>
+                        <div class="row-sub">
+                            {it.relPath}
+                            {#if it.size}
+                                <span class="dot">·</span>
+                                {formatSize(it.size)}
+                            {/if}
+                        </div>
+                        {#if p}
+                            <div class="progress">
+                                <div class="progress-bar" style={`width:${p.pct}%`}></div>
+                            </div>
+                            <div class="progress-text">
+                                已看 {formatTime(p.t)} / {formatTime(p.d)}
+                            </div>
                         {/if}
                     </div>
-                    {#if p}
-                        <div class="progress">
-                            <div class="progress-bar" style={`width:${p.pct}%`}></div>
-                        </div>
-                        <div class="progress-text">
-                            已看 {formatTime(p.t)} / {formatTime(p.d)}
-                        </div>
-                    {/if}
-                </div>
-            </button>
+                </button>
+                <button
+                    type="button"
+                    class="btn-add-playlist"
+                    class:added={isInPlaylist(it.url)}
+                    title={isInPlaylist(it.url) ? "已在播放列表" : "加入播放列表"}
+                    onclick={(e) => handleAddToPlaylist(e, it)}
+                >{isInPlaylist(it.url) ? "✓" : "+"}</button>
+            </div>
         {/if}
     {/each}
 </div>
@@ -227,5 +212,48 @@
     }
     .dot {
         margin: 0 6px;
+    }
+    .file-row {
+        grid-template-columns: 1fr auto;
+        padding: 0;
+        gap: 0;
+        cursor: default;
+    }
+    .file-play-area {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: var(--space-sm);
+        padding: var(--space-sm);
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        text-align: left;
+        min-width: 0;
+    }
+    .btn-add-playlist {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border: none;
+        background: none;
+        color: var(--color-text-muted);
+        cursor: pointer;
+        font-size: 1.2rem;
+        font-weight: 700;
+        border-radius: var(--radius-md);
+        flex-shrink: 0;
+        align-self: center;
+        margin-right: var(--space-xs);
+        transition: background 0.12s, color 0.12s;
+    }
+    .btn-add-playlist:hover {
+        background: var(--color-border);
+        color: var(--color-text);
+    }
+    .btn-add-playlist.added {
+        color: var(--color-primary, #6c63ff);
     }
 </style>

@@ -8,10 +8,11 @@
      * @property {string} [relPath]
      */
 
-    /** @type {{ item: MediaItem, onClose: () => void }} */
-    let { item, onClose } = $props();
+    /** @type {{ item: MediaItem, onClose: () => void, onEnded?: () => void }} */
+    let { item, onClose, onEnded: onEndedCallback } = $props();
 
-    import { clearProgress, getProgress, makeMediaId, setProgress } from "../progress.js";
+    import { clearProgress, getProgress, makeMediaId, setProgress } from "../progress.svelte.js";
+    import { formatTime } from "../utils.js";
 
     /** @type {HTMLVideoElement | HTMLAudioElement | null} */
     let mediaEl = $state(null);
@@ -86,16 +87,9 @@
         syncForMediaId();
         if (!mediaId) return;
         clearProgress(mediaId);
+        onEndedCallback?.();
     }
 
-    function formatTime(sec) {
-        const s = Math.max(0, Math.floor(Number(sec) || 0));
-        const hh = Math.floor(s / 3600);
-        const mm = Math.floor((s % 3600) / 60);
-        const ss = s % 60;
-        const pad2 = (n) => String(n).padStart(2, "0");
-        return hh > 0 ? `${hh}:${pad2(mm)}:${pad2(ss)}` : `${mm}:${pad2(ss)}`;
-    }
 </script>
 
 <main class="player">

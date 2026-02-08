@@ -169,7 +169,7 @@ func buildVideosForPath(conf *Config, sourceName, srcPath string) ([]MediaItem, 
 
 		relSlash := filepath.ToSlash(rel)
 		encodedRel := encodeURLPath(relSlash)
-		streamURL := "/stream/" + url.PathEscape(sourceName) + "/" + encodedRel
+		streamURL := "/stream/" + sourceName + "/" + encodedRel
 
 		items = append(items, MediaItem{
 			Source:    sourceName,
@@ -183,7 +183,7 @@ func buildVideosForPath(conf *Config, sourceName, srcPath string) ([]MediaItem, 
 		return nil
 	})
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		// WalkDir 只在回调返回 error 时才会透出；这里理论上很少触发
+		LogWarn("WalkDir 遇到错误", "source", sourceName, "path", srcPath, "error", err)
 	}
 
 	return items, nil
