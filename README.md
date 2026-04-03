@@ -13,13 +13,13 @@
 
 ## 配置
 
-默认读取配置文件：**当前目录**或 **exe 同目录**的 `v-link.yaml` / `v-link.yml`。
+默认读取配置文件：**当前目录**或 **exe 同目录**的 `yseren.yaml` / `yseren.yml`。
 
 ```bash
-yseren.exe -config D:/path/to/v-link.yaml
+yseren.exe -config D:/path/to/yseren.yaml
 ```
 
-示例 `v-link.yaml`：
+示例 `yseren.yaml`：
 
 ```yaml
 server:
@@ -53,7 +53,7 @@ cd frontend && npm install && npm run dev
 # 或者双击 build.cmd
 
 # 也支持自定义输出名
-.\build.ps1 -Out lv-link.exe
+.\build.ps1 -Out yseren-custom.exe
 
 # 如果你坚持手动构建，记得顺序必须是：
 # 1) cd frontend && npm ci && npm run build && cd ..

@@ -15,7 +15,7 @@ type Source struct {
 	Path string `yaml:"path"`
 }
 
-// Config 对应 v-link.yaml
+// Config 对应 YSeren 配置文件
 type Config struct {
 	Server struct {
 		Port     int    `yaml:"port"`
@@ -34,6 +34,9 @@ var DefaultAudioExtensions = []string{".mp3", ".flac", ".wav", ".aac", ".ogg", "
 
 // DefaultMediaExtensions 所有默认支持的媒体格式
 var DefaultMediaExtensions = append(append([]string{}, DefaultVideoExtensions...), DefaultAudioExtensions...)
+
+// PreferredConfigNames 是 YSeren 默认的配置文件名
+var PreferredConfigNames = []string{"yseren.yaml", "yseren.yml"}
 
 func LoadConfig(path string) (*Config, error) {
 	buf, err := os.ReadFile(path)
@@ -90,7 +93,7 @@ func LoadConfig(path string) (*Config, error) {
 // LoadConfigAuto:
 // - 如果 explicitPath 非空：直接读取该文件
 // - 否则按顺序查找：当前工作目录 -> 可执行文件所在目录
-// - 文件名：v-link.yaml 或 v-link.yml
+// - 文件名：yseren.yaml 或 yseren.yml
 func LoadConfigAuto(explicitPath string) (*Config, string, error) {
 	explicitPath = strings.TrimSpace(explicitPath)
 	if explicitPath != "" {
@@ -98,7 +101,7 @@ func LoadConfigAuto(explicitPath string) (*Config, string, error) {
 		return c, explicitPath, err
 	}
 
-	candidates := []string{"v-link.yaml", "v-link.yml"}
+	candidates := append([]string{}, PreferredConfigNames...)
 	// 1) 当前工作目录
 	for _, name := range candidates {
 		if fileExists(name) {
@@ -119,7 +122,7 @@ func LoadConfigAuto(explicitPath string) (*Config, string, error) {
 		}
 	}
 
-	return nil, "", errors.New("未找到配置文件：请在当前目录或 exe 同目录放置 v-link.yaml/v-link.yml，或使用 -config 指定路径")
+	return nil, "", errors.New("未找到配置文件：请在当前目录或 exe 同目录放置 yseren.yaml/yseren.yml，或使用 -config 指定路径")
 }
 
 func fileExists(path string) bool {

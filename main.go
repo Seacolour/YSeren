@@ -15,8 +15,8 @@ func main() {
 		}
 	}()
 
-	// 1. 加载配置：支持 -config 指定；默认按"当前目录 -> exe 同目录"查找 v-link.yaml/yml
-	configPath := flag.String("config", "", "配置文件路径（默认查找 v-link.yaml 或 v-link.yml：当前目录 -> exe 同目录）")
+	// 1. 加载配置：支持 -config 指定；默认按"当前目录 -> exe 同目录"查找 yseren.yaml/yml
+	configPath := flag.String("config", "", "配置文件路径（默认查找 yseren.yaml 或 yseren.yml：当前目录 -> exe 同目录）")
 	flag.Parse()
 
 	conf, usedPath, err := LoadConfigAuto(*configPath)

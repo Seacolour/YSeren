@@ -48,7 +48,7 @@ frontend/.svelte-kit/
 # Project-specific
 ############################
 # If you generate these locally, keep them out of git.
-lv-link.exe
+yseren.exe
 dist/
 bin/
 tmp/

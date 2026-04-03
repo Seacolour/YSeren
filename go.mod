@@ -1,4 +1,4 @@
-module lv-link
+module yseren
 
 go 1.24.0
 
