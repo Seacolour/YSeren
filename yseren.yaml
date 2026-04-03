@@ -1,8 +1,0 @@
-server:
-  port: 1479
-  log_level: info
-
-sources:
-  - path: "E:/BaiduNetdiskDownload/test"
-  - path: "E:/BaiduNetdiskDownload/asmr"
-  - path: "E:/BaiduNetdiskDownload/120506"

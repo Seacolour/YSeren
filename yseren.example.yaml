@@ -1,0 +1,19 @@
+server:
+  port: 1479
+  log_level: info
+
+sources:
+  - name: videos
+    path: "D:/Media/Videos"
+
+# Optional: extend the full media scan list.
+# media_extensions:
+#   - .mp4
+#   - .mkv
+#   - .mp3
+
+# Optional: extra extensions that should use the audio player.
+# These are also added into the media scan list automatically.
+# audio_extensions:
+#   - .opus
+#   - .mka

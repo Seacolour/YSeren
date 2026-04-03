@@ -105,6 +105,19 @@
     return chain;
   }
 
+  function syncNavForTree(query, previousDirKey = "") {
+    if (!treeRoot) return;
+
+    if (query?.trim()) {
+      const chain = previousDirKey ? buildNavToDir(previousDirKey) : [];
+      nav = chain.length ? chain : [treeRoot];
+      return;
+    }
+
+    syncStateFromURL({ replace: true });
+    if (!nav?.length) nav = [treeRoot];
+  }
+
   function syncStateFromURL({ replace = true } = {}) {
     if (!treeRoot) return;
     const { ds, dp, ps, pp } = readURLState();
@@ -188,6 +201,9 @@
     ac = new AbortController();
     loading = true;
     error = "";
+    const previousDirKey = currentDir
+      ? makeKey(currentDir?.source || "", currentDir?.relPath || "")
+      : "";
     try {
       const url =
         "/api/tree" + (query ? `?q=${encodeURIComponent(query)}` : "");
@@ -199,13 +215,7 @@
       fileByKey = idx.files;
       dirByKey = idx.dirs;
       parentByDirKey = idx.parents;
-
-      // 搜索时不改 nav；首屏时若 treeRoot 是虚拟根目录，则展开到那里
-      if (!query && treeRoot) {
-        // 先尝试从 URL 恢复目录/播放器；不成功再回退默认 root
-        syncStateFromURL({ replace: true });
-        if (!nav?.length) nav = [treeRoot];
-      }
+      syncNavForTree(query, previousDirKey);
     } catch (e) {
       if (e.name !== "AbortError") {
         error = String(e?.message || e);

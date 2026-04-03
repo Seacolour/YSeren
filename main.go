@@ -35,7 +35,7 @@ func main() {
 	// 2. 循环挂载所有资源点
 	for _, source := range conf.Sources {
 		// 注意：URL 路径建议加个前缀，比如 /stream/我的动漫
-		route := fmt.Sprintf("/stream/%s/", source.Name)
+		route := streamRoutePattern(source.Name)
 
 		// 创建文件服务器
 		fs := http.FileServer(http.Dir(source.Path))

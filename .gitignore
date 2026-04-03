@@ -30,6 +30,9 @@ coverage/
 # Local env
 .env
 .env.*
+yseren.yaml
+yseren.yml
+yseren-error.log
 
 ############################
 # Frontend (Node/Svelte/Vite)

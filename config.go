@@ -24,6 +24,8 @@ type Config struct {
 	Sources []Source `yaml:"sources"`
 	// MediaExtensions 支持的媒体文件扩展名（含点号），为空时使用默认值
 	MediaExtensions []string `yaml:"media_extensions"`
+	// AudioExtensions 可选：补充“应按音频处理”的扩展名，并自动加入媒体扫描名单
+	AudioExtensions []string `yaml:"audio_extensions"`
 }
 
 // DefaultVideoExtensions 默认支持的视频格式
@@ -31,6 +33,11 @@ var DefaultVideoExtensions = []string{".mp4", ".mkv", ".webm", ".mov", ".m4v", "
 
 // DefaultAudioExtensions 默认支持的音频格式
 var DefaultAudioExtensions = []string{".mp3", ".flac", ".wav", ".aac", ".ogg", ".m4a", ".wma"}
+
+// KnownAudioExtensions 用于识别常见的额外音频格式，便于自定义媒体扩展时仍正确走音频播放器。
+var KnownAudioExtensions = mergeExtensions(DefaultAudioExtensions, []string{
+	".opus", ".oga", ".weba", ".aif", ".aiff", ".ape", ".alac", ".amr", ".ac3", ".dts", ".mka", ".tta",
+})
 
 // DefaultMediaExtensions 所有默认支持的媒体格式
 var DefaultMediaExtensions = append(append([]string{}, DefaultVideoExtensions...), DefaultAudioExtensions...)
@@ -54,18 +61,14 @@ func LoadConfig(path string) (*Config, error) {
 		conf.Server.Port = 1479
 	}
 
-	// 如果没有配置 media_extensions，使用默认值
+	conf.MediaExtensions = normalizeExtensions(conf.MediaExtensions)
+	conf.AudioExtensions = normalizeExtensions(conf.AudioExtensions)
+
+	// 如果没有配置 media_extensions，使用默认值；audio_extensions 会自动补进扫描名单。
 	if len(conf.MediaExtensions) == 0 {
-		conf.MediaExtensions = DefaultMediaExtensions
+		conf.MediaExtensions = mergeExtensions(DefaultMediaExtensions, conf.AudioExtensions)
 	} else {
-		// 确保扩展名都是小写且带点号
-		for i, ext := range conf.MediaExtensions {
-			ext = strings.ToLower(strings.TrimSpace(ext))
-			if !strings.HasPrefix(ext, ".") {
-				ext = "." + ext
-			}
-			conf.MediaExtensions[i] = ext
-		}
+		conf.MediaExtensions = mergeExtensions(conf.MediaExtensions, conf.AudioExtensions)
 	}
 
 	// 允许 sources 只写 path，不写 name（自动用目录名作为 name）
@@ -88,6 +91,47 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &conf, nil
+}
+
+func normalizeExtensions(exts []string) []string {
+	if len(exts) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(exts))
+	out := make([]string, 0, len(exts))
+	for _, ext := range exts {
+		ext = strings.ToLower(strings.TrimSpace(ext))
+		if ext == "" {
+			continue
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		if _, ok := seen[ext]; ok {
+			continue
+		}
+		seen[ext] = struct{}{}
+		out = append(out, ext)
+	}
+	return out
+}
+
+func mergeExtensions(groups ...[]string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0)
+	for _, group := range groups {
+		for _, ext := range group {
+			if ext == "" {
+				continue
+			}
+			if _, ok := seen[ext]; ok {
+				continue
+			}
+			seen[ext] = struct{}{}
+			out = append(out, ext)
+		}
+	}
+	return out
 }
 
 // LoadConfigAuto:
@@ -183,10 +227,15 @@ func (c *Config) IsMediaFile(filename string) bool {
 	return false
 }
 
-// IsAudioFile 检查文件名是否为音频格式（用于前端区分播放器类型）
-func IsAudioFile(filename string) bool {
+// IsAudioFile 检查文件名是否应按音频格式处理（用于前端区分播放器类型）。
+func (c *Config) IsAudioFile(filename string) bool {
 	ext := strings.ToLower(filepath.Ext(filename))
-	for _, e := range DefaultAudioExtensions {
+	for _, e := range c.AudioExtensions {
+		if ext == e {
+			return true
+		}
+	}
+	for _, e := range KnownAudioExtensions {
 		if ext == e {
 			return true
 		}

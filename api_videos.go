@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -154,7 +153,7 @@ func buildVideosForPath(conf *Config, sourceName, srcPath string) ([]MediaItem, 
 
 		// 判断媒体类型
 		mediaType := "video"
-		if IsAudioFile(name) {
+		if conf.IsAudioFile(name) {
 			mediaType = "audio"
 		}
 
@@ -168,8 +167,7 @@ func buildVideosForPath(conf *Config, sourceName, srcPath string) ([]MediaItem, 
 		}
 
 		relSlash := filepath.ToSlash(rel)
-		encodedRel := encodeURLPath(relSlash)
-		streamURL := "/stream/" + sourceName + "/" + encodedRel
+		streamURL := buildStreamURL(sourceName, relSlash)
 
 		items = append(items, MediaItem{
 			Source:    sourceName,
@@ -198,14 +196,4 @@ func parseIntDefault(s string, def int) int {
 		return def
 	}
 	return n
-}
-
-// encodeURLPath：对每个 path segment 做 PathEscape，保留 “/” 作为层级分隔符
-func encodeURLPath(relSlash string) string {
-	relSlash = strings.TrimPrefix(relSlash, "/")
-	parts := strings.Split(relSlash, "/")
-	for i := range parts {
-		parts[i] = url.PathEscape(parts[i])
-	}
-	return strings.Join(parts, "/")
 }

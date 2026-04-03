@@ -195,10 +195,9 @@ func buildTreeForPath(conf *Config, sourceName, srcPath string) (*TreeNode, erro
 			return nil
 		}
 
-		encodedRel := encodeURLPath(relSlash)
-		streamURL := "/stream/" + sourceName + "/" + encodedRel
+		streamURL := buildStreamURL(sourceName, relSlash)
 		mediaType := "video"
-		if IsAudioFile(name) {
+		if conf.IsAudioFile(name) {
 			mediaType = "audio"
 		}
 		parent.Children = append(parent.Children, &TreeNode{
