@@ -62,6 +62,8 @@ cd frontend && npm install && npm run dev
 - 前端：Svelte + Vite
 - 本地配置模板：[`yseren.example.yaml`](./yseren.example.yaml)
 - 贡献说明：[`CONTRIBUTING.md`](./CONTRIBUTING.md)
+- 变更日志：[`CHANGELOG.md`](./CHANGELOG.md)
+- 安全策略：[`SECURITY.md`](./SECURITY.md)
 
 ## 构建
 
@@ -86,6 +88,19 @@ go vet ./...
 
 cd frontend && npm run build
 ```
+
+## Releases
+
+- 建议通过 GitHub Releases 分发正式版本。
+- 推荐使用 `vX.Y.Z` 这样的 tag，例如 `v0.1.0`。
+- 仓库内已提供 GitHub Actions 发布工作流：推送 `v*` tag 后会自动构建发布包并上传到 Release。
+- Release 产物会包含二进制、示例配置、`README`、`LICENSE` 和 `SHA256SUMS.txt`。
+
+## Packages
+
+- 当前仓库以 GitHub Releases 为主要分发方式。
+- 目前没有额外接入 GitHub Packages，因为这个项目更适合直接发布可执行文件。
+- 如果后续需要更方便的安装体验，建议优先考虑 `winget`、`Scoop` 或容器镜像分发。
 
 ## License
 

@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible problem in YSeren
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+        Please include enough detail so the issue can be reproduced.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release version, commit hash, or branch name
+      placeholder: v0.1.0 / main / e6c8dd7
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A short description of the bug
+      placeholder: Describe the incorrect behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start YSeren with ...
+        2. Open ...
+        3. Click ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Describe what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Config and logs
+      description: Remove any private paths or personal information before pasting
+      placeholder: Paste relevant config snippets, logs, or screenshots here
