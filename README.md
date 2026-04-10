@@ -7,7 +7,6 @@
 - **/stream/**：把本地目录挂载为可播放的 HTTP 路由（浏览器/手机可直接播放，支持 Range）
 - **/api/videos**：前端用的 JSON 列表接口（递归扫描、搜索、分页）
 - **视频 + 音频**：默认支持 mp4/mkv/webm/mov/avi + mp3/flac/wav/aac/ogg 等格式
-- **zip（MVP）**：在目录树中识别 `.zip`，由用户手动点击"解压"
 - **前端 UI（Svelte）**：手机适配的文件浏览/搜索/最近播放
 - **单文件交付**：Go `embed` 把 `frontend/dist` 打进 exe
 
@@ -46,6 +45,8 @@ sources:
 
 如果你要新增自定义音频格式，优先写 `audio_extensions`。这样前端会继续用音频播放器，而不会误判成视频播放器。
 
+注意：YSeren 只识别媒体文件，不识别也不处理压缩包。像 `.zip` 这类文件请先用系统文件管理器或其他工具解压，再让 YSeren 共享解压后的目录内容。
+
 ## 开发环境
 
 ```bash
@@ -55,6 +56,24 @@ go run .
 # 前端（需要另开终端）
 cd frontend && npm install && npm run dev
 ```
+
+## Android 方向
+
+仓库现在开始包含一个 Android 侧的 MVP 脚手架，目标不是“手机播放端”，而是“手机作为媒体源，对局域网暴露 HTTP 流媒体”。
+
+- Android 项目入口：[`android/README.md`](./android/README.md)
+- 方案说明：[`docs/android-share-mvp.md`](./docs/android-share-mvp.md)
+- 当前 Android MVP 端点：
+  - `/`
+  - `/api/status`
+  - `/api/tree?path=...`
+  - `/playlist.m3u`
+  - `/stream/<relative-path>`
+
+当前这部分仍处于原型阶段，核心路线是：
+- 用 Android Storage Access Framework 选择目录
+- 用 foreground service 持续共享
+- 用轻量本地 HTTP 服务把目录内容扩散到局域网
 
 ## 仓库信息
 

@@ -48,6 +48,13 @@ frontend/.vite/
 frontend/.svelte-kit/
 
 ############################
+# Android
+############################
+android/.gradle/
+android/local.properties
+android/**/build/
+
+############################
 # Project-specific
 ############################
 # If you generate these locally, keep them out of git.

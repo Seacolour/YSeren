@@ -17,8 +17,6 @@
   let parentByDirKey = $state({});
 
   let selected = $state(null);
-  let notice = $state("");
-
   /** @type {AbortController | null} */
   let ac = null;
   let firstQueryRun = true;
@@ -225,28 +223,6 @@
     }
   }
 
-  async function extractZip(node) {
-    notice = `正在解压 ${node.name}…`;
-    try {
-      const payload = { source: node.source, relPath: node.relPath };
-      const res = await fetch("/api/zip/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(j?.error || res.statusText);
-      }
-      notice = "解压成功，正在刷新…";
-      await fetchTree(q);
-      notice = "";
-    } catch (e) {
-      notice = `解压失败: ${e?.message || e}`;
-      setTimeout(() => (notice = ""), 3000);
-    }
-  }
-
   // 搜索防抖
   $effect(() => {
     const query = q;
@@ -278,13 +254,9 @@
         <div class="section-title">
           文件浏览
           <span class="muted">
-            （{loading ? "加载中…" : q?.trim() ? "搜索结果" : "目录树"}）
+            （{loading ? "加载中…" : q?.trim() ? "搜索结果" : "目录树，自动忽略压缩包"}）
           </span>
         </div>
-
-        {#if notice}
-          <div class="notice">{notice}</div>
-        {/if}
 
         {#if error}
           <div class="error">{error}</div>
@@ -303,7 +275,6 @@
               items={currentChildren}
               onEnterDir={enterDir}
               onPlayFile={openPlayer}
-              onExtractZip={extractZip}
             />
           {/if}
         {:else}
@@ -344,12 +315,6 @@
     margin-bottom: var(--space-xs);
   }
 
-  .notice {
-    padding: var(--space-sm) var(--space-md);
-    background: var(--color-notice-bg);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-base);
-  }
   .error {
     padding: var(--space-sm) var(--space-md);
     background: var(--color-error-bg);

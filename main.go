@@ -50,8 +50,6 @@ func main() {
 	http.HandleFunc("/api/videos", ListVideosHandler(conf))
 	// 2.1 API：目录树（保留层级，便于前端做"文件夹浏览"）
 	http.HandleFunc("/api/tree", ListTreeHandler(conf))
-	// 2.2 API：zip 解压（MVP：仅支持 .zip，且不自动展开，用户手动点击"解压"）
-	http.HandleFunc("/api/zip/extract", ZipExtractHandler(conf))
 
 	// 3. 前端：优先用 embed 的静态资源提供手机 UI；如果没打包 dist，就回退到传统目录（方便本地开发）
 	http.Handle("/", FrontendHandler())

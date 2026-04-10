@@ -1,7 +1,7 @@
 <script>
     /**
      * @typedef {Object} TreeNode
-     * @property {string} type - "dir" | "file" | "zip"
+     * @property {string} type - "dir" | "file"
      * @property {string} name
      * @property {string} [relPath]
      * @property {string} [source]
@@ -13,10 +13,9 @@
     /** @type {{
      *   items: TreeNode[],
      *   onEnterDir: (node: TreeNode) => void,
-     *   onPlayFile: (node: TreeNode) => void,
-     *   onExtractZip: (node: TreeNode) => void
+     *   onPlayFile: (node: TreeNode) => void
      * }} */
-    let { items, onEnterDir, onPlayFile, onExtractZip } = $props();
+    let { items, onEnterDir, onPlayFile } = $props();
 
     import { makeMediaId, progressState } from "../progress.svelte.js";
     import { formatSize, formatTime } from "../utils.js";
@@ -31,7 +30,7 @@
         if (!item) return "";
         // 对 file：沿用 makeMediaId，确保与播放页写入的进度 key 一致
         if (item.type === "file") return makeMediaId(item);
-        // 对 dir/zip：即使 relPath 为空也要保证 key 唯一
+        // 对 dir：即使 relPath 为空也要保证 key 唯一
         const type = item?.type ? String(item.type) : "node";
         const source = item?.source ? String(item.source) : "";
         const relPath = item?.relPath ? String(item.relPath) : "";
@@ -62,24 +61,6 @@
                 </div>
                 <div class="chev">›</div>
             </button>
-        {:else if it.type === "zip"}
-            <div class="row zip">
-                <div class="icon folder">📦</div>
-                <div class="row-main">
-                    <div class="row-title">{it.name}</div>
-                    <div class="row-sub">{it.relPath}</div>
-                </div>
-                <button
-                    type="button"
-                    class="zip-btn"
-                    onclick={(e) => {
-                        e.stopPropagation();
-                        onExtractZip(it);
-                    }}
-                >
-                    解压
-                </button>
-            </div>
         {:else}
             {@const p = getItemProgress(it)}
             <div class="row file-row">
@@ -137,21 +118,6 @@
         box-shadow: var(--shadow-sm);
         cursor: pointer;
         color: inherit;
-    }
-    .row.zip {
-        cursor: default;
-    }
-    .zip-btn {
-        border: 1px solid var(--color-border-strong);
-        background: var(--color-bg-overlay);
-        border-radius: var(--radius-md);
-        padding: var(--space-sm) var(--space-sm);
-        font-weight: 700;
-        cursor: pointer;
-        box-shadow: var(--shadow-md);
-    }
-    .zip-btn:hover {
-        border-color: var(--color-border-hover);
     }
     .row:hover {
         border-color: var(--color-border-hover);

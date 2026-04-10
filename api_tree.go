@@ -13,7 +13,7 @@ import (
 )
 
 type TreeNode struct {
-	Type      string      `json:"type"` // "dir" | "file" | "zip"
+	Type      string      `json:"type"` // "dir" | "file"
 	Name      string      `json:"name"`
 	RelPath   string      `json:"relPath"`
 	Source    string      `json:"source,omitempty"`
@@ -171,8 +171,7 @@ func buildTreeForPath(conf *Config, sourceName, srcPath string) (*TreeNode, erro
 		}
 		relSlash := filepath.ToSlash(rel)
 
-		ext := strings.ToLower(filepath.Ext(relSlash))
-		if ext != ".zip" && !conf.IsMediaFile(relSlash) {
+		if !conf.IsMediaFile(relSlash) {
 			return nil
 		}
 
@@ -183,18 +182,6 @@ func buildTreeForPath(conf *Config, sourceName, srcPath string) (*TreeNode, erro
 		parent := ensureDir(parentRel)
 
 		name := d.Name()
-		if ext == ".zip" {
-			parent.Children = append(parent.Children, &TreeNode{
-				Type:    "zip",
-				Name:    name,
-				RelPath: relSlash,
-				Source:  sourceName,
-				Size:    info.Size(),
-				ModTime: info.ModTime().Unix(),
-			})
-			return nil
-		}
-
 		streamURL := buildStreamURL(sourceName, relSlash)
 		mediaType := "video"
 		if conf.IsAudioFile(name) {
@@ -225,17 +212,13 @@ func sortTree(n *TreeNode) {
 		sortTree(c)
 	}
 	sort.SliceStable(n.Children, func(i, j int) bool {
-		// dir 先于 zip 先于 file
+		// dir 先于 file
 		if n.Children[i].Type != n.Children[j].Type {
 			rank := func(t string) int {
-				switch t {
-				case "dir":
+				if t == "dir" {
 					return 0
-				case "zip":
-					return 1
-				default: // file
-					return 2
 				}
+				return 1
 			}
 			return rank(n.Children[i].Type) < rank(n.Children[j].Type)
 		}
