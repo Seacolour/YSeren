@@ -19,6 +19,12 @@ class AppPrefs(context: Context) {
             .apply()
     }
 
+    fun savePort(port: Int) {
+        prefs.edit()
+            .putInt(KEY_PORT, port)
+            .apply()
+    }
+
     fun clearTree() {
         prefs.edit()
             .remove(KEY_TREE_URI)
