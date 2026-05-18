@@ -8,9 +8,9 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/ic_menu_share"
+        android:icon="@drawable/yseren_logo"
         android:label="@string/app_name"
-        android:roundIcon="@android:drawable/ic_menu_share"
+        android:roundIcon="@drawable/yseren_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.YSerenAndroid">
 

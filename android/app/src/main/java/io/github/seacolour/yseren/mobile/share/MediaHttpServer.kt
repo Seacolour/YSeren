@@ -6,9 +6,11 @@ import fi.iki.elonen.NanoHTTPD
 import io.github.seacolour.yseren.mobile.ShareConfig
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.io.InputStream
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 class MediaHttpServer(
     context: Context,
@@ -20,12 +22,11 @@ class MediaHttpServer(
     override fun serve(session: IHTTPSession): Response {
         return try {
             when {
-                session.uri == "/" -> serveHomePage(session)
                 session.uri == "/api/status" -> jsonResponse(buildStatusJson())
                 session.uri == "/api/tree" -> serveTree(session)
                 session.uri == "/playlist.m3u" -> servePlaylist(session)
                 session.uri.startsWith("/stream/") -> serveStream(session)
-                else -> newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not found")
+                else -> serveFrontend(session)
             }
         } catch (t: Throwable) {
             newFixedLengthResponse(
@@ -33,6 +34,63 @@ class MediaHttpServer(
                 MIME_PLAINTEXT,
                 "Server error: ${t.message ?: t::class.java.simpleName}",
             )
+        }
+    }
+
+    private fun serveFrontend(session: IHTTPSession): Response {
+        val assetPath = frontendAssetPath(session.uri)
+        if (assetPath != null) {
+            assetResponse(assetPath)?.let { return it }
+        }
+
+        assetResponse("index.html")?.let { return it }
+
+        return if (session.uri == "/") {
+            serveHomePage(session)
+        } else {
+            newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not found")
+        }
+    }
+
+    private fun frontendAssetPath(uri: String): String? {
+        val clean = uri.substringBefore('?')
+            .trimStart('/')
+            .ifBlank { "index.html" }
+        val parts = clean.split('/').filter { it.isNotBlank() }
+        if (parts.any { it == "." || it == ".." }) {
+            return null
+        }
+        return parts.joinToString("/")
+    }
+
+    private fun assetResponse(assetPath: String): Response? {
+        return try {
+            val bytes = appContext.assets.open(assetPath).use { it.readBytes() }
+            newFixedLengthResponse(
+                Response.Status.OK,
+                mimeForAsset(assetPath),
+                bytes.inputStream(),
+                bytes.size.toLong(),
+            )
+        } catch (_: IOException) {
+            null
+        }
+    }
+
+    private fun mimeForAsset(assetPath: String): String {
+        return when (assetPath.substringAfterLast('.', "").lowercase(Locale.ROOT)) {
+            "html" -> "text/html; charset=utf-8"
+            "js" -> "application/javascript; charset=utf-8"
+            "css" -> "text/css; charset=utf-8"
+            "json" -> "application/json; charset=utf-8"
+            "svg" -> "image/svg+xml"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "webp" -> "image/webp"
+            "ico" -> "image/x-icon"
+            "wasm" -> "application/wasm"
+            "map" -> "application/json; charset=utf-8"
+            else -> "application/octet-stream"
         }
     }
 
@@ -62,6 +120,25 @@ class MediaHttpServer(
     }
 
     private fun serveTree(session: IHTTPSession): Response {
+        if (session.parameters.containsKey("path")) {
+            return serveTreeListing(session)
+        }
+
+        val query = session.parameters["q"]?.firstOrNull().orEmpty()
+        val root = repository.buildMediaTree(
+            rootUri = config.treeUri,
+            rootName = config.displayName,
+            source = ANDROID_SOURCE,
+        )
+        val filteredRoot = repository.filterTree(root, query) ?: root.copy(children = emptyList())
+        val json = JSONObject()
+            .put("generatedAt", System.currentTimeMillis() / 1000)
+            .put("source", ANDROID_SOURCE)
+            .put("root", treeNodeJson(filteredRoot))
+        return jsonResponse(json)
+    }
+
+    private fun serveTreeListing(session: IHTTPSession): Response {
         val relPath = session.parameters["path"]?.firstOrNull().orEmpty()
         val items = repository.listChildren(config.treeUri, relPath)
         val json = JSONObject()
@@ -83,6 +160,31 @@ class MediaHttpServer(
                 }
             })
         return jsonResponse(json)
+    }
+
+    private fun treeNodeJson(node: ShareTreeNode): JSONObject {
+        val json = JSONObject()
+            .put("type", node.type)
+            .put("name", node.name)
+            .put("relPath", node.relPath)
+            .put("source", node.source)
+            .put("lastModified", node.lastModified)
+
+        node.url?.let { json.put("url", it) }
+        if (node.size > 0L) {
+            json.put("size", node.size)
+        }
+        node.mimeType?.let { json.put("mimeType", it) }
+        node.mediaType?.let { json.put("mediaType", it) }
+        if (node.children.isNotEmpty()) {
+            json.put(
+                "children",
+                JSONArray().apply {
+                    node.children.forEach { put(treeNodeJson(it)) }
+                },
+            )
+        }
+        return json
     }
 
     private fun servePlaylist(session: IHTTPSession): Response {
@@ -222,6 +324,10 @@ class MediaHttpServer(
     private data class ByteRange(val start: Long, val end: Long) {
         val length: Long
             get() = (end - start) + 1
+    }
+
+    private companion object {
+        const val ANDROID_SOURCE = "android"
     }
 }
 

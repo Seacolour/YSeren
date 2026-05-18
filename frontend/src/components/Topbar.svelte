@@ -1,11 +1,13 @@
 <script>
+    import logoUrl from "../assets/yseren-logo.svg";
+
     /** @type {string} */
     let { searchQuery = $bindable("") } = $props();
 </script>
 
 <header class="topbar">
     <div class="brand">
-        <div class="logo">✦</div>
+        <img class="logo" src={logoUrl} alt="" aria-hidden="true" />
         <div class="title">
             <div class="name">YSeren</div>
             <div class="sub">局域网媒体</div>
@@ -41,13 +43,8 @@
         width: 36px;
         height: 36px;
         border-radius: var(--radius-md);
-        display: grid;
-        place-items: center;
-        background: var(--gradient-brand);
-        font-weight: 800;
-        letter-spacing: -0.5px;
-        color: white;
-        font-size: var(--font-size-xl);
+        display: block;
+        flex: 0 0 auto;
     }
     .title .name {
         font-weight: 800;

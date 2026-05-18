@@ -13,9 +13,10 @@ network, so browsers or dedicated media players can consume the stream directly.
 - The app stores persistent read permission for that folder.
 - A foreground service starts a lightweight local HTTP server.
 - The server exposes:
-  - `/` simple landing page
+  - `/` packaged YSeren Web UI, with a simple diagnostic landing page fallback
   - `/api/status` current server info
-  - `/api/tree?path=...` directory listing
+  - `/api/tree` recursive media tree for the Web UI
+  - `/api/tree?path=...` directory listing for diagnostics
   - `/playlist.m3u` recursive media playlist
   - `/stream/<relative-path>` byte-range-friendly media streaming
 
@@ -32,6 +33,18 @@ network, so browsers or dedicated media players can consume the stream directly.
 ## Build
 
 Open the `android/` folder in Android Studio.
+
+To package the Web UI into the Android APK, build the frontend first:
+
+```powershell
+cd ..\frontend
+npm install
+npm run build
+```
+
+The Android Gradle project includes `../frontend/dist` as app assets. If that
+directory is missing when the APK is built, `/` falls back to the diagnostic
+landing page.
 
 The repository currently includes the Android project files, but build
 verification still depends on a local Android SDK installation.

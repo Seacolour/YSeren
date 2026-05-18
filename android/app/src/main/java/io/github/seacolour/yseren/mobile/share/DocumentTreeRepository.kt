@@ -16,6 +16,19 @@ data class ShareEntry(
     val mimeType: String?,
 )
 
+data class ShareTreeNode(
+    val type: String,
+    val name: String,
+    val relPath: String,
+    val source: String,
+    val url: String? = null,
+    val size: Long = 0L,
+    val lastModified: Long = 0L,
+    val mimeType: String? = null,
+    val mediaType: String? = null,
+    val children: List<ShareTreeNode> = emptyList(),
+)
+
 class DocumentTreeRepository(private val context: Context) {
     fun resolve(rootUri: Uri, relPath: String): DocumentFile? {
         val root = DocumentFile.fromTreeUri(context, rootUri) ?: return null
@@ -86,6 +99,29 @@ class DocumentTreeRepository(private val context: Context) {
         return results.sortedBy { it.relPath.lowercase(Locale.ROOT) }
     }
 
+    fun buildMediaTree(rootUri: Uri, rootName: String, source: String): ShareTreeNode {
+        val root = DocumentFile.fromTreeUri(context, rootUri)
+            ?: return ShareTreeNode(type = "dir", name = rootName, relPath = "", source = source)
+        return buildTreeNode(root, rootName, "", source)
+    }
+
+    fun filterTree(node: ShareTreeNode, query: String): ShareTreeNode? {
+        val q = query.trim().lowercase(Locale.ROOT)
+        if (q.isEmpty()) {
+            return node
+        }
+
+        val matched = node.name.lowercase(Locale.ROOT).contains(q) ||
+            node.relPath.lowercase(Locale.ROOT).contains(q)
+        val keptChildren = node.children.mapNotNull { filterTree(it, q) }
+
+        return if (matched || keptChildren.isNotEmpty()) {
+            node.copy(children = keptChildren)
+        } else {
+            null
+        }
+    }
+
     fun guessMimeType(file: DocumentFile): String {
         file.type?.let { return it }
         val ext = file.name
@@ -93,6 +129,51 @@ class DocumentTreeRepository(private val context: Context) {
             ?.lowercase(Locale.ROOT)
             .orEmpty()
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+    }
+
+    private fun buildTreeNode(
+        document: DocumentFile,
+        displayName: String,
+        relPath: String,
+        source: String,
+    ): ShareTreeNode {
+        if (!document.isDirectory) {
+            return ShareTreeNode(
+                type = "file",
+                name = displayName,
+                relPath = relPath,
+                source = source,
+                url = streamUrl(relPath),
+                size = document.length(),
+                lastModified = document.lastModified(),
+                mimeType = guessMimeType(document),
+                mediaType = if (isAudioFile(displayName)) "audio" else "video",
+            )
+        }
+
+        val children = document.listFiles()
+            .mapNotNull { child ->
+                if (!child.canRead()) {
+                    return@mapNotNull null
+                }
+                val childName = child.name ?: return@mapNotNull null
+                val childRelPath = buildRelativePath(relPath, childName)
+                when {
+                    child.isDirectory -> buildTreeNode(child, childName, childRelPath, source)
+                    isMediaFile(childName) -> buildTreeNode(child, childName, childRelPath, source)
+                    else -> null
+                }
+            }
+            .sortedWith(compareBy<ShareTreeNode> { it.type != "dir" }.thenBy { it.name.lowercase(Locale.ROOT) })
+
+        return ShareTreeNode(
+            type = "dir",
+            name = displayName,
+            relPath = relPath,
+            source = source,
+            lastModified = document.lastModified(),
+            children = children,
+        )
     }
 
     private fun DocumentFile.toEntry(relPath: String): ShareEntry {
@@ -120,7 +201,37 @@ class DocumentTreeRepository(private val context: Context) {
         return ext in MEDIA_EXTENSIONS
     }
 
+    private fun isAudioFile(name: String): Boolean {
+        val extValue = name.substringAfterLast('.', missingDelimiterValue = "")
+        if (extValue.isEmpty()) {
+            return false
+        }
+        val ext = ".${extValue.lowercase(Locale.ROOT)}"
+        return ext in AUDIO_EXTENSIONS
+    }
+
+    private fun streamUrl(relPath: String): String {
+        val encoded = relPath.split('/')
+            .filter { it.isNotEmpty() }
+            .joinToString("/") { Uri.encode(it) }
+        return "/stream/$encoded"
+    }
+
     companion object {
+        private val AUDIO_EXTENSIONS = setOf(
+            ".mp3",
+            ".flac",
+            ".wav",
+            ".aac",
+            ".ogg",
+            ".m4a",
+            ".wma",
+            ".opus",
+            ".oga",
+            ".weba",
+            ".mka",
+        )
+
         private val MEDIA_EXTENSIONS = setOf(
             ".mp4",
             ".mkv",
