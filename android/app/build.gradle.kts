@@ -7,19 +7,44 @@ android {
     namespace = "io.github.seacolour.yseren.mobile"
     compileSdk = 34
 
+    val androidKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+    val androidKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    val androidKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+    val androidKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+    val hasReleaseSigning = listOf(
+        androidKeystorePath,
+        androidKeystorePassword,
+        androidKeyAlias,
+        androidKeyPassword,
+    ).all { !it.isNullOrBlank() }
+
     defaultConfig {
         applicationId = "io.github.seacolour.yseren.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = file(androidKeystorePath!!)
+                storePassword = androidKeystorePassword
+                keyAlias = androidKeyAlias
+                keyPassword = androidKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

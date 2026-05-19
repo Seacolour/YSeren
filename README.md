@@ -64,8 +64,9 @@ cd frontend && npm install && npm run dev
 - Android 项目入口：[`android/README.md`](./android/README.md)
 - 方案说明：[`docs/android-share-mvp.md`](./docs/android-share-mvp.md)
 - 当前 Android MVP 端点：
-  - `/`
+  - `/`（APK 内置 Web UI）
   - `/api/status`
+  - `/api/tree`
   - `/api/tree?path=...`
   - `/playlist.m3u`
   - `/stream/<relative-path>`
@@ -114,6 +115,7 @@ cd frontend && npm run build
 - 推荐使用 `vX.Y.Z` 这样的 tag，例如 `v0.1.0`。
 - 仓库内已提供 GitHub Actions 发布工作流：推送 `v*` tag 后会自动构建发布包并上传到 Release。
 - Release 产物会包含二进制、示例配置、`README`、`LICENSE` 和 `SHA256SUMS.txt`。
+- Android release workflow 会同时构建 APK；如仓库配置了 Android 签名 secrets，会上传签名 APK，否则上传 unsigned APK 作为测试/侧载产物。
 
 ## Packages
 

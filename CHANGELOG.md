@@ -7,6 +7,22 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-18
+
+### Added
+
+- Android Compose/Material3 control console with dashboard, media source, LAN URL, and settings tabs.
+- Android app icons, notification icon, Web UI favicon, manifest, and installable PWA-style assets.
+- Android foreground share server now packages the YSeren Web UI inside the APK.
+- Android `/api/tree` recursive media tree API for the packaged Web UI, while keeping `/api/tree?path=...` diagnostics.
+- Android release workflow support for building an APK artifact, with optional signing through repository secrets.
+
+### Changed
+
+- Android app version bumped to `0.1.2` with `versionCode` 2.
+- Android share notification now uses the app notification icon.
+- Web top bar now uses the YSeren logo and a compact brand header.
+
 ## [0.1.1] - 2026-04-10
 
 ### Added

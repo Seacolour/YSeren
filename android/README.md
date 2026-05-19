@@ -46,5 +46,21 @@ The Android Gradle project includes `../frontend/dist` as app assets. If that
 directory is missing when the APK is built, `/` falls back to the diagnostic
 landing page.
 
-The repository currently includes the Android project files, but build
-verification still depends on a local Android SDK installation.
+## Release Signing
+
+Release builds can be signed by providing these environment variables:
+
+- `ANDROID_KEYSTORE_PATH`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+The GitHub Release workflow expects the matching repository secrets:
+
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+If signing secrets are not configured, the workflow still builds and uploads an
+unsigned APK for testing or manual side loading.
