@@ -1,15 +1,20 @@
 <script>
+  import { onMount } from "svelte";
   import Topbar from "./components/Topbar.svelte";
   import Player from "./components/Player.svelte";
+  import Playlist from "./components/Playlist.svelte";
   import Breadcrumb from "./components/Breadcrumb.svelte";
   import FileList from "./components/FileList.svelte";
   import Skeleton from "./components/Skeleton.svelte";
+  import { getNextItem } from "./playlist.svelte.js";
+  import { checkForUpdate } from "./update.svelte.js";
 
   let q = $state("");
   let loading = $state(false);
+  let refreshing = $state(false);
   let error = $state("");
+  let showPlaylist = $state(false);
 
-  // Tree API data
   let treeRoot = $state(null);
   let nav = $state([]);
   let fileByKey = $state({});
@@ -20,6 +25,8 @@
   /** @type {AbortController | null} */
   let ac = null;
   let firstQueryRun = true;
+  /** @type {(() => void) | null} */
+  let focusSearch = null;
 
   const QS = Object.freeze({
     dirSource: "ds",
@@ -44,13 +51,11 @@
   function writeURLState(next, { replace = false } = {}) {
     const u = new URL(window.location.href);
 
-    // directory
     if (next?.ds) u.searchParams.set(QS.dirSource, next.ds);
     else u.searchParams.delete(QS.dirSource);
     if (next?.dp) u.searchParams.set(QS.dirRelPath, next.dp);
     else u.searchParams.delete(QS.dirRelPath);
 
-    // player
     if (next?.ps) u.searchParams.set(QS.playSource, next.ps);
     else u.searchParams.delete(QS.playSource);
     if (next?.pp) u.searchParams.set(QS.playRelPath, next.pp);
@@ -71,7 +76,6 @@
         files[makeKey(node.source, node.relPath)] = node;
       }
       if (node?.type === "dir") {
-        // root/virtual-root 也会是 dir；这里允许 source 为空
         const k = makeKey(node?.source || "", node?.relPath || "");
         dirs[k] = node;
         if (parent?.type === "dir") {
@@ -89,7 +93,6 @@
   }
 
   function buildNavToDir(targetKey) {
-    // 用 parentByDirKey 回溯到根，再反转
     const chain = [];
     let k = targetKey;
     const seen = new Set();
@@ -120,7 +123,6 @@
     if (!treeRoot) return;
     const { ds, dp, ps, pp } = readURLState();
 
-    // 1) 恢复目录（仅在非搜索状态下）
     if (!q?.trim()) {
       if (ds) {
         const targetKey = makeKey(ds, dp);
@@ -129,7 +131,6 @@
           nav = chain;
         } else {
           nav = [treeRoot];
-          // URL 指向不存在的目录时，清理掉，避免一直“恢复失败”
           writeURLState({ ds: "", dp: "", ps, pp }, { replace });
         }
       } else if (treeRoot && (!nav?.length || nav[0] !== treeRoot)) {
@@ -137,7 +138,6 @@
       }
     }
 
-    // 2) 恢复播放器
     if (ps && pp) {
       const node = fileByKey[makeKey(ps, pp)];
       if (node) selected = node;
@@ -149,7 +149,7 @@
 
   function openPlayer(node) {
     selected = node;
-    // 把播放状态写进 URL，刷新/返回时可恢复
+    showPlaylist = false;
     if (node?.source && node?.relPath) {
       const { ds, dp } = readURLState();
       writeURLState({ ds, dp, ps: node.source, pp: node.relPath });
@@ -160,6 +160,12 @@
     selected = null;
     const { ds, dp } = readURLState();
     writeURLState({ ds, dp, ps: "", pp: "" });
+  }
+
+  function playNextInPlaylist() {
+    if (!selected?.url) return;
+    const next = getNextItem(selected.url);
+    if (next) openPlayer(next);
   }
 
   function enterDir(node) {
@@ -194,17 +200,25 @@
     }) || [],
   );
 
-  async function fetchTree(query) {
+  let sectionHint = $derived(
+    loading ? "加载中…" : q?.trim() ? "搜索结果" : "目录树，自动忽略压缩包",
+  );
+
+  async function fetchTree(query, { refresh = false } = {}) {
     if (ac) ac.abort();
     ac = new AbortController();
     loading = true;
+    if (refresh) refreshing = true;
     error = "";
     const previousDirKey = currentDir
       ? makeKey(currentDir?.source || "", currentDir?.relPath || "")
       : "";
     try {
-      const url =
-        "/api/tree" + (query ? `?q=${encodeURIComponent(query)}` : "");
+      const params = new URLSearchParams();
+      if (query?.trim()) params.set("q", query.trim());
+      if (refresh) params.set("refresh", "1");
+      const qs = params.toString();
+      const url = "/api/tree" + (qs ? `?${qs}` : "");
       const res = await fetch(url, { signal: ac.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -220,10 +234,45 @@
       }
     } finally {
       loading = false;
+      refreshing = false;
     }
   }
 
-  // 搜索防抖
+  function handleRefresh() {
+    fetchTree(q, { refresh: true });
+  }
+
+  function togglePlaylist() {
+    showPlaylist = !showPlaylist;
+  }
+
+  function handleKeydown(e) {
+    const tag = e.target?.tagName?.toLowerCase();
+    const inInput = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
+
+    if (e.key === "Escape") {
+      if (selected) {
+        e.preventDefault();
+        closePlayer();
+      } else if (showPlaylist) {
+        e.preventDefault();
+        showPlaylist = false;
+      }
+      return;
+    }
+
+    if (e.key === "F5" && !inInput) {
+      e.preventDefault();
+      handleRefresh();
+      return;
+    }
+
+    if (e.key === "/" && !inInput) {
+      e.preventDefault();
+      focusSearch?.();
+    }
+  }
+
   $effect(() => {
     const query = q;
     if (firstQueryRun) {
@@ -235,27 +284,46 @@
     return () => clearTimeout(t);
   });
 
-  // 监听浏览器前进/后退：按 URL 恢复目录/播放器
+  onMount(() => {
+    checkForUpdate();
+  });
+
   $effect(() => {
     const onPop = () => syncStateFromURL({ replace: true });
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   });
+
+  $effect(() => {
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  });
 </script>
 
 <div class="app">
-  <Topbar bind:searchQuery={q} />
+  <Topbar
+    bind:searchQuery={q}
+    onRefresh={handleRefresh}
+    onTogglePlaylist={togglePlaylist}
+    {refreshing}
+    registerSearchFocus={(fn) => { focusSearch = fn; }}
+  />
 
   {#if selected}
-    <Player item={selected} onClose={closePlayer} />
+    <div class="player-shell">
+      <Player item={selected} onClose={closePlayer} onEnded={playNextInPlaylist} />
+    </div>
   {:else}
     <main class="content">
       <section class="section">
-        <div class="section-title">
-          文件浏览
-          <span class="muted">
-            （{loading ? "加载中…" : q?.trim() ? "搜索结果" : "目录树，自动忽略压缩包"}）
-          </span>
+        <div class="section-head">
+          <div class="section-title">
+            文件浏览
+            <span class="muted">（{sectionHint}）</span>
+          </div>
+          {#if !loading && currentChildren.length > 0}
+            <span class="item-count">{currentChildren.length} 项</span>
+          {/if}
         </div>
 
         {#if error}
@@ -283,11 +351,25 @@
       </section>
     </main>
   {/if}
+
+  {#if showPlaylist}
+    <Playlist
+      onPlay={openPlayer}
+      onClose={() => { showPlaylist = false; }}
+    />
+  {/if}
 </div>
 
 <style>
   .app {
     min-height: 100svh;
+  }
+
+  .content,
+  .player-shell {
+    max-width: var(--content-max-width);
+    margin: 0 auto;
+    width: 100%;
   }
 
   .content {
@@ -300,6 +382,15 @@
     display: grid;
     gap: var(--space-sm);
   }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+  }
+
   .section-title {
     font-weight: 700;
     margin: 6px 0 0;
@@ -307,6 +398,15 @@
   .muted {
     font-weight: 400;
     color: var(--color-text-muted);
+  }
+
+  .item-count {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border);
   }
 
   .path {
@@ -325,5 +425,11 @@
   .empty {
     padding: var(--space-md) var(--space-sm);
     color: var(--color-text-muted);
+  }
+
+  @media (min-width: 768px) {
+    .content {
+      padding: var(--space-lg) var(--space-xl);
+    }
   }
 </style>

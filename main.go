@@ -50,6 +50,8 @@ func main() {
 	http.HandleFunc("/api/videos", ListVideosHandler(conf))
 	// 2.1 API：目录树（保留层级，便于前端做"文件夹浏览"）
 	http.HandleFunc("/api/tree", ListTreeHandler(conf))
+	// 2.2 API：版本信息与更新检查
+	http.HandleFunc("/api/version", VersionHandler())
 
 	// 3. 前端：优先用 embed 的静态资源提供手机 UI；如果没打包 dist，就回退到传统目录（方便本地开发）
 	http.Handle("/", FrontendHandler())
@@ -59,7 +61,11 @@ func main() {
 
 	// 启动信息（保持用户友好的输出）
 	fmt.Println()
-	fmt.Printf("  ✦ YSeren - 局域网媒体\n")
+	fmt.Printf("  ✦ YSeren - 局域网媒体")
+	if v := normalizeVersion(Version); v != "" && v != "dev" {
+		fmt.Printf("  v%s", v)
+	}
+	fmt.Println()
 	fmt.Printf("  ─────────────────────\n")
 	fmt.Printf("本机访问: http://localhost:%d/\n", conf.Server.Port)
 

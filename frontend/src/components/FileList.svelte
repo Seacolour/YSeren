@@ -97,6 +97,12 @@
             </div>
         {/if}
     {/each}
+    {#if items.length === 0}
+        <div class="empty">
+            <p class="empty-title">此目录为空</p>
+            <p class="empty-hint">当前目录下没有可播放的媒体文件</p>
+        </div>
+    {/if}
 </div>
 
 <style>
@@ -118,6 +124,7 @@
         box-shadow: var(--shadow-sm);
         cursor: pointer;
         color: inherit;
+        transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
     }
     .row:hover {
         border-color: var(--color-border-hover);
@@ -221,5 +228,36 @@
     }
     .btn-add-playlist.added {
         color: var(--color-primary, #6c63ff);
+    }
+
+    .empty {
+        padding: 48px 24px;
+        text-align: center;
+        border: 1px dashed var(--color-border-strong);
+        border-radius: var(--radius-lg);
+        background: var(--color-bg-card);
+    }
+    .empty-title {
+        margin: 0 0 6px;
+        font-weight: 700;
+        color: var(--color-text);
+    }
+    .empty-hint {
+        margin: 0;
+        font-size: var(--font-size-sm);
+        color: var(--color-text-muted);
+    }
+
+    @media (min-width: 768px) {
+        .list {
+            gap: 10px;
+        }
+        .row:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+        .file-row:hover {
+            transform: none;
+        }
     }
 </style>

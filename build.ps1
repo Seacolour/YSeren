@@ -34,7 +34,24 @@ if (-not $NoFrontend) {
 }
 
 Write-Host "==> Build backend (Go embed -> single exe)" -ForegroundColor Cyan
-go build -o $Out
+
+$version = "dev"
+try {
+  $exactTag = git describe --tags --exact-match 2>$null
+  if ($exactTag) {
+    $version = $exactTag.TrimStart("v")
+  } else {
+    $describe = git describe --tags --always 2>$null
+    if ($describe -match "v?(?<ver>\d+\.\d+\.\d+)") {
+      $version = $Matches["ver"]
+    }
+  }
+} catch {
+  # 保持 dev
+}
+
+Write-Host "Version: $version" -ForegroundColor DarkGray
+go build -ldflags="-X main.Version=$version" -o $Out
 
 Write-Host "Done: $Out" -ForegroundColor Green
 

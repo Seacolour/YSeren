@@ -86,8 +86,9 @@ jobs:
           mkdir -p "${package_dir}"
           cp README.md LICENSE yseren.example.yaml "${package_dir}/"
 
+          version="${TAG_NAME#v}"
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -trimpath -ldflags="-s -w" -o "${package_dir}/${{ matrix.binary_name }}" .
+            go build -trimpath -ldflags="-s -w -X main.Version=${version}" -o "${package_dir}/${{ matrix.binary_name }}" .
 
           if [ "${{ matrix.archive_ext }}" = "zip" ]; then
             (
