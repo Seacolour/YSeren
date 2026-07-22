@@ -1,0 +1,46 @@
+{
+  "generatedAt": 1700000000,
+  "root": {
+    "type": "dir",
+    "name": "root",
+    "relPath": "",
+    "children": [
+      {
+        "type": "dir",
+        "name": "videos",
+        "relPath": "",
+        "source": "videos",
+        "children": [
+          {
+            "type": "dir",
+            "name": "Movies",
+            "relPath": "Movies",
+            "source": "videos",
+            "children": [
+              {
+                "type": "file",
+                "name": "Example Movie.mp4",
+                "relPath": "Movies/Example Movie.mp4",
+                "source": "videos",
+                "url": "/stream/videos/Movies/Example%20Movie.mp4",
+                "size": 1048576,
+                "modTime": 1699999000,
+                "mediaType": "video"
+              }
+            ]
+          },
+          {
+            "type": "file",
+            "name": "Theme Song.mp3",
+            "relPath": "Theme Song.mp3",
+            "source": "videos",
+            "url": "/stream/videos/Theme%20Song.mp3",
+            "size": 524288,
+            "modTime": 1699998000,
+            "mediaType": "audio"
+          }
+        ]
+      }
+    ]
+  }
+}

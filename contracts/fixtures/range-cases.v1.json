@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "resource": {
+    "name": "sample.mp4",
+    "content": "0123456789"
+  },
+  "cases": [
+    {
+      "name": "full-get",
+      "method": "GET",
+      "range": "",
+      "status": 200,
+      "body": "0123456789",
+      "contentRange": "",
+      "contentLength": "10"
+    },
+    {
+      "name": "head",
+      "method": "HEAD",
+      "range": "",
+      "status": 200,
+      "body": "",
+      "contentRange": "",
+      "contentLength": "10"
+    },
+    {
+      "name": "fixed-range",
+      "method": "GET",
+      "range": "bytes=0-3",
+      "status": 206,
+      "body": "0123",
+      "contentRange": "bytes 0-3/10",
+      "contentLength": "4"
+    },
+    {
+      "name": "open-ended-range",
+      "method": "GET",
+      "range": "bytes=4-",
+      "status": 206,
+      "body": "456789",
+      "contentRange": "bytes 4-9/10",
+      "contentLength": "6"
+    },
+    {
+      "name": "suffix-range",
+      "method": "GET",
+      "range": "bytes=-4",
+      "status": 206,
+      "body": "6789",
+      "contentRange": "bytes 6-9/10",
+      "contentLength": "4"
+    },
+    {
+      "name": "unsatisfied-range",
+      "method": "GET",
+      "range": "bytes=99-",
+      "status": 416,
+      "contentRange": "bytes */10"
+    }
+  ]
+}
