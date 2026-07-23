@@ -1,0 +1,4 @@
+build/bin/
+build/test-media/
+node_modules/
+frontend/dist/

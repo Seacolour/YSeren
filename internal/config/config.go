@@ -49,35 +49,106 @@ func LoadConfig(path string) (*Config, error) {
 	if err := yaml.Unmarshal(buf, &conf); err != nil {
 		return nil, err
 	}
-
-	if conf.Server.Port == 0 {
-		conf.Server.Port = DefaultPort
-	}
-	conf.MediaExtensions = media.NormalizeExtensions(conf.MediaExtensions)
-	conf.AudioExtensions = media.NormalizeExtensions(conf.AudioExtensions)
-	if len(conf.MediaExtensions) == 0 {
-		conf.MediaExtensions = media.MergeExtensions(DefaultMediaExtensions, conf.AudioExtensions)
-	} else {
-		conf.MediaExtensions = media.MergeExtensions(conf.MediaExtensions, conf.AudioExtensions)
-	}
-
-	for i := range conf.Sources {
-		conf.Sources[i].Path = strings.TrimSpace(conf.Sources[i].Path)
-		conf.Sources[i].Name = strings.TrimSpace(conf.Sources[i].Name)
-		if conf.Sources[i].Name == "" && conf.Sources[i].Path != "" {
-			cleaned := filepath.Clean(conf.Sources[i].Path)
-			base := filepath.Base(cleaned)
-			if base == "." || base == string(filepath.Separator) {
-				base = "videos"
-			}
-			conf.Sources[i].Name = base
-		}
-	}
+	conf.ApplyDefaults()
 
 	if err := conf.Validate(); err != nil {
 		return nil, err
 	}
 	return &conf, nil
+}
+
+// DefaultConfig returns a ready-to-run configuration for callers that do not
+// load YAML first, such as the Desktop first-run flow.
+func DefaultConfig() Config {
+	conf := Config{Server: ServerConfig{Port: DefaultPort}}
+	conf.ApplyDefaults()
+	return conf
+}
+
+// ApplyDefaults normalises the same defaults used by LoadConfig. It is useful
+// for GUI callers that build a configuration in memory.
+func (c *Config) ApplyDefaults() {
+	if c == nil {
+		return
+	}
+	if c.Server.Port == 0 {
+		c.Server.Port = DefaultPort
+	}
+	c.MediaExtensions = media.NormalizeExtensions(c.MediaExtensions)
+	c.AudioExtensions = media.NormalizeExtensions(c.AudioExtensions)
+	if len(c.MediaExtensions) == 0 {
+		c.MediaExtensions = media.MergeExtensions(DefaultMediaExtensions, c.AudioExtensions)
+	} else {
+		c.MediaExtensions = media.MergeExtensions(c.MediaExtensions, c.AudioExtensions)
+	}
+
+	for i := range c.Sources {
+		c.Sources[i].Path = strings.TrimSpace(c.Sources[i].Path)
+		c.Sources[i].Name = strings.TrimSpace(c.Sources[i].Name)
+		if c.Sources[i].Name == "" && c.Sources[i].Path != "" {
+			cleaned := filepath.Clean(c.Sources[i].Path)
+			base := filepath.Base(cleaned)
+			if base == "." || base == string(filepath.Separator) {
+				base = "videos"
+			}
+			c.Sources[i].Name = base
+		}
+	}
+}
+
+// SaveConfig validates and atomically replaces a YAML configuration file.
+func SaveConfig(path string, conf Config) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return errors.New("配置文件路径不能为空")
+	}
+	conf.ApplyDefaults()
+	if err := conf.Validate(); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(&conf)
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %w", err)
+	}
+
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("解析配置文件路径失败: %w", err)
+	}
+	directory := filepath.Dir(absolutePath)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+	temporary, err := os.CreateTemp(directory, ".yseren-*.tmp")
+	if err != nil {
+		return fmt.Errorf("创建临时配置文件失败: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	removeTemporary := true
+	defer func() {
+		_ = temporary.Close()
+		if removeTemporary {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+
+	if err := temporary.Chmod(0o644); err != nil {
+		return fmt.Errorf("设置临时配置文件权限失败: %w", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		return fmt.Errorf("写入临时配置文件失败: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		return fmt.Errorf("同步临时配置文件失败: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("关闭临时配置文件失败: %w", err)
+	}
+	if err := os.Rename(temporaryPath, absolutePath); err != nil {
+		return fmt.Errorf("替换配置文件失败: %w", err)
+	}
+	removeTemporary = false
+	return nil
 }
 
 // LoadConfigAuto 保留原有发现顺序：显式路径、当前目录、可执行文件目录。

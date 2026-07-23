@@ -59,6 +59,7 @@ android/**/build/
 ############################
 # If you generate these locally, keep them out of git.
 yseren.exe
+resource/
 dist/
 bin/
 tmp/

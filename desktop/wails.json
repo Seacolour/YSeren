@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "YSeren Desktop",
+  "outputfilename": "YSeren",
+  "frontend:install": "npm ci",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Seacolour",
+    "email": ""
+  },
+  "info": {
+    "companyName": "Seacolour",
+    "productName": "YSeren",
+    "productVersion": "0.0.0",
+    "copyright": "Copyright © 2026 Seacolour",
+    "comments": "轻量的局域网媒体访问工具"
+  }
+}

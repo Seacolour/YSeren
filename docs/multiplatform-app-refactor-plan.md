@@ -1,6 +1,6 @@
 # YSeren 多平台应用化重构计划
 
-- 状态：Phase 0、Phase 1 已完成，待进入 Phase 2 技术验证
+- 状态：Phase 0、Phase 1、Phase 2 Windows Desktop MVP 已完成；下一阶段为 Phase 3 Android 契约收敛
 - 适用平台：Windows、Linux、Android
 - 播放端：现代浏览器
 - 关联文档：[YSeren 项目推进计划](./task.md)
@@ -263,19 +263,17 @@ Desktop MVP 需要：
 
 ### 7.4 Desktop 技术选择
 
-当前优先候选为 Wails + Svelte，原因是可以直接调用 Go Core，并复用现有 Svelte、CSS 和构建经验。
+Windows Phase 2 已确认采用 Wails v2.12.0 + Svelte 5。Desktop 作为独立嵌套 Go 模块，通过 `replace yseren => ..` 直接复用 Go Core，Wails、WebView 和托盘依赖不进入 Headless 模块。
 
-正式绑定框架前应完成一个小型技术验证：
+本阶段的具体决定：
 
-- Windows 目录选择器。
-- 托盘。
-- 打开默认浏览器。
-- 单实例。
-- Go Runtime 的启动和停止。
-- Windows WebView2 依赖处理。
-- Linux WebKitGTK 依赖与打包可行性。
-
-如果验证发现 Linux 依赖或托盘支持不可接受，再比较 Fyne 或更薄的原生 Go GUI。不要在技术验证前重写现有前端。
+- Wails 固定为 v2.12.0，以兼容当前 Go 1.24 工具链；升级前必须重新确认最低 Go 版本。
+- 托盘使用仍在维护的纯 Go `fyne.io/systray` v1.12.2。
+- Windows 使用 Evergreen WebView2；安装器在缺失时调用 Wails 提供的 WebView2 bootstrapper。
+- 安装包使用 NSIS，采用当前用户权限并安装到 `%LOCALAPPDATA%\Programs\YSeren`，不要求 UAC。
+- 安装模式使用 `%APPDATA%\YSeren`，EXE 同目录存在 YAML 时切换为 Portable 模式。
+- 浏览器继续承担媒体播放；Desktop 只负责本地控制和平台集成。
+- Linux WebKitGTK、托盘和分发格式验证推迟到 Phase 4，不影响 Windows MVP 的框架决定。
 
 ## 8. Web Player 的长期定位
 
@@ -496,6 +494,18 @@ GUI 会降低共享门槛，因此在面向普通用户发布前，必须先收�
 - 端口冲突、无目录和目录不可读有明确提示。
 - 关闭、托盘和退出行为可预测。
 
+完成记录（2026-07-23）：
+
+- 新增独立 `desktop` Go 模块，Wails 依赖未进入根 Headless 模块；Desktop 在同一进程内调用 Go Runtime，不启动外置 `yseren.exe`。
+- 实现首次运行流程以及“共享 / 媒体源 / 设置”三页，支持目录选择、媒体源增删改、目录可读性、启动停止、地址复制、默认浏览器打开、端口热重启和 YAML 导入导出。
+- 实现显式配置、EXE 同目录 Portable、AppData 三层配置优先级，并将窗口、托盘和启动偏好保存在独立 JSON 文件中。
+- 实现 Windows 托盘菜单、关闭到托盘、单实例唤回、当前用户开机启动和有超时的优雅退出。
+- 使用 Wails v2.12.0、Svelte 5、WebView2 与 `fyne.io/systray`；Windows EXE 和 NSIS 用户级安装包均已成功生成。
+- 已真实验证首次选目录后自动共享并打开浏览器、Runtime 启停、`/api/tree`、MP4 单段 Range、媒体源添加与改名、端口热重启、关闭到托盘、单实例唤回和完整退出。
+- 用户已使用安装版从 `D:\Code\yseren\resource` 加载真实测试资源；Windows Chrome 通过局域网地址正常浏览 MP3、MP4，ZIP 压缩包按设计被自动忽略。
+- 用户级安装已验证落在 `%LOCALAPPDATA%\Programs\YSeren\YSeren.exe`，卸载信息写入 HKCU，并为当前用户创建桌面和开始菜单快捷方式。
+- 当前阶段只完成 Windows；Linux Desktop、Android 契约收敛和跨设备真机矩阵仍按后续 Phase 推进。
+
 ### Phase 3：Android 契约收敛
 
 目标：Android 媒体源与 Go 服务对 Web Player 表现一致。
@@ -667,21 +677,18 @@ YSeren 应保留自己的差异：
 
 以下事项在对应 Phase 开始前确认，不阻塞当前计划归档：
 
-- Desktop 最终采用 Wails、Fyne 还是其他薄 GUI。
 - Android 是否从单来源扩展为多来源。
 - Windows Desktop 首版是否包含二维码。
 - Linux 首批支持的发行版和打包格式。
 - 首个 Desktop 版本是否定为 v0.2.0。
 - 是否在 Desktop MVP 后加入 mDNS 发现。
 
-## 18. 下一阶段开始时的第一批任务
+## 18. Phase 2 完成后的第一批任务
 
-下一次进入实现阶段时，从 Phase 2 的 Desktop 技术验证开始：
+Windows MVP 完成后不立即并行铺开所有平台，下一批工作按以下顺序推进：
 
-1. 建立小型、可独立删除的 Wails + Svelte 技术验证入口，不直接铺开完整 Desktop 页面。
-2. 验证 Windows 原生目录选择器、打开默认浏览器以及对 Go Runtime 的进程内 Start/Stop/Status 调用。
-3. 验证托盘、单实例和退出时优雅停机，并记录 WebView2 的安装与 Portable 行为。
-4. 对 Linux WebKitGTK、托盘和打包依赖做最小构建验证，明确其是否影响继续采用 Wails。
-5. 将验证结果写成技术决策记录；框架通过后再进入首次运行向导和“共享 / 媒体源 / 设置”三页实现。
-
-在技术验证完成前，不将验证代码扩展为完整 Desktop MVP，也不引入 GUI 依赖到 Headless 构建路径。
+1. 固化 Windows Desktop 的自动化和手工验收记录，处理首批用户反馈，但不在当前阶段构建正式 Release。
+2. 进入 Phase 3，先用既有契约样例收敛 Android 的 `/api/tree`、Range、HEAD 和时间字段，再调整 Android 控制界面。
+3. 在 Android 契约稳定后完成 Android 真机到 Windows 浏览器的共享验证。
+4. 最后进入 Phase 4，单独验证 Linux WebKitGTK、托盘、XDG 配置与首批分发格式。
+5. Phase 5 再统一版本号、Git tag、Headless/Desktop/Android 构建和 SHA256 清单。

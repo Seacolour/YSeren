@@ -131,6 +131,78 @@ func TestConfigValidateRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigMatchesLoadDefaults(t *testing.T) {
+	t.Parallel()
+
+	conf := DefaultConfig()
+	if conf.Server.Port != DefaultPort {
+		t.Fatalf("default port = %d, want %d", conf.Server.Port, DefaultPort)
+	}
+	if !conf.IsMediaFile("movie.mp4") || !conf.IsMediaFile("song.mp3") {
+		t.Fatalf("default media extensions = %v", conf.MediaExtensions)
+	}
+	if len(conf.Sources) != 0 {
+		t.Fatalf("default sources = %#v, want empty", conf.Sources)
+	}
+}
+
+func TestSaveConfigCreatesDirectoryAndRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "nested", "yseren.yaml")
+	conf := DefaultConfig()
+	conf.Server.Port = 2480
+	conf.Sources = []Source{{Path: "D:/Media/Videos"}}
+	if err := SaveConfig(path, conf); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if loaded.Server.Port != 2480 || len(loaded.Sources) != 1 || loaded.Sources[0].Name != "Videos" {
+		t.Fatalf("loaded config = %#v", loaded)
+	}
+}
+
+func TestSaveConfigReplacesExistingFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "yseren.yaml")
+	first := DefaultConfig()
+	first.Server.Port = 1479
+	second := DefaultConfig()
+	second.Server.Port = 2480
+	if err := SaveConfig(path, first); err != nil {
+		t.Fatalf("first SaveConfig() error = %v", err)
+	}
+	if err := SaveConfig(path, second); err != nil {
+		t.Fatalf("second SaveConfig() error = %v", err)
+	}
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if loaded.Server.Port != 2480 {
+		t.Fatalf("loaded port = %d, want 2480", loaded.Server.Port)
+	}
+}
+
+func TestSaveConfigRejectsInvalidConfigWithoutCreatingFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "yseren.yaml")
+	conf := DefaultConfig()
+	conf.Sources = []Source{{Name: "invalid/name", Path: "D:/Media"}}
+	if err := SaveConfig(path, conf); err == nil {
+		t.Fatal("SaveConfig() error = nil, want validation error")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("saved invalid config, stat error = %v", err)
+	}
+}
+
 func TestIsPathSafe(t *testing.T) {
 	t.Parallel()
 
