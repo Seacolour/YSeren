@@ -1,6 +1,6 @@
 # YSeren 多平台应用化重构计划
 
-- 状态：Phase 0、Phase 1、Phase 2 Windows Desktop MVP 已完成；下一阶段为 Phase 3 Android 契约收敛
+- 状态：Phase 0、Phase 1、Phase 2 Windows Desktop MVP、Phase 3 Android 均已完成；下一阶段为 Phase 4 Linux Desktop
 - 适用平台：Windows、Linux、Android
 - 播放端：现代浏览器
 - 关联文档：[YSeren 项目推进计划](./task.md)
@@ -286,7 +286,7 @@ Svelte Web Player 是跨平台共享程度最高、最需要保持稳定的用�
 - 音频和视频标签播放。
 - URL 状态恢复。
 - 播放进度。
-- 倍速。
+- 浏览器原生媒体控制（包括浏览器支持的倍速菜单）。
 - 播放列表。
 - 更新提示。
 
@@ -526,6 +526,18 @@ GUI 会降低共享门槛，因此在面向普通用户发布前，必须先收�
 - Android debug/release 构建通过。
 - Android 真机前台服务和浏览器播放完成手工验证。
 
+完成记录（2026-07-24）：
+
+- `/api/tree` 已收敛为 `root -> android -> media`，Android 新生成的流地址统一为 `/stream/android/<relative-path>`，并保留旧 `/stream/<relative-path>` 地址兼容。
+- `size`、`modTime`、`generatedAt`、`mediaType`、`source` 和 URL 字段已与共享契约对齐；时间统一使用 Unix 秒，`/api/status` 不再向局域网暴露 SAF `content://` URI，并新增 `/api/version`。
+- 修复了完整 GET、HEAD、固定区间、开放区间、后缀 Range、非法 Range 416、方法限制与 SAF 输入流关闭；Android 单元测试直接复用 `contracts/fixtures` 中的目录树和 Range 契约样例。
+- Android 控制界面已重做为“共享 / 媒体源 / 设置”三页 Compose 应用，采用固定品牌配色和底部导航；支持可读目录路径、媒体数量、选择/更换/移除/重新扫描目录、启停服务、本机浏览器入口、局域网地址复制和运行中端口热重启。
+- 雷电 Android 9/API 28 模拟器识别了测试目录中的 3 个 MP4，并忽略 ZIP；真实 HTTP 验证覆盖 200、206、416、HEAD、旧地址和 405，端口热重启 `1479 -> 1480 -> 1479` 通过。
+- Windows 浏览器通过 ADB 端口转发访问同一套 Web Player，无平台特判进入 Android 媒体树并实际播放 `bear.mp4`；播放进度前进、媒体错误为空，流请求为 206，浏览器控制台无错误和警告。
+- `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:lintVitalRelease` 与 `:app:assembleRelease` 已通过；无签名变量时成功生成 unsigned Release APK。
+- 雷电模拟器使用 NAT，模拟器显示的 `172.16.1.15:1479` 无法由 Windows 直接访问，因此模拟器浏览器结果只记录为“模拟器 + ADB 转发”。随后已在 Android 真机上从 `内部存储 / Movies` 识别 24 个媒体文件，并由同一 Wi-Fi 下的 Windows Chrome 直接访问 `http://192.168.50.171:1479/`，完成标准目录树浏览和媒体实际播放；Phase 3 真机跨设备验收通过。
+- Web Player 播放页移除了与 Chrome 等浏览器原生媒体菜单重复的自建倍速按钮，播放速度继续交由浏览器原生控件处理。
+
 ### Phase 4：Linux Desktop
 
 目标：在不削弱 Linux Headless 的前提下提供可安装 GUI。
@@ -677,7 +689,7 @@ YSeren 应保留自己的差异：
 
 以下事项在对应 Phase 开始前确认，不阻塞当前计划归档：
 
-- Android 是否从单来源扩展为多来源。
+- Android Phase 3 保持单来源并固定使用 `android` 作为契约来源名；是否扩展多来源留待后续反馈决定。
 - Windows Desktop 首版是否包含二维码。
 - Linux 首批支持的发行版和打包格式。
 - 首个 Desktop 版本是否定为 v0.2.0。
@@ -688,7 +700,7 @@ YSeren 应保留自己的差异：
 Windows MVP 完成后不立即并行铺开所有平台，下一批工作按以下顺序推进：
 
 1. 固化 Windows Desktop 的自动化和手工验收记录，处理首批用户反馈，但不在当前阶段构建正式 Release。
-2. 进入 Phase 3，先用既有契约样例收敛 Android 的 `/api/tree`、Range、HEAD 和时间字段，再调整 Android 控制界面。
-3. 在 Android 契约稳定后完成 Android 真机到 Windows 浏览器的共享验证。
-4. 最后进入 Phase 4，单独验证 Linux WebKitGTK、托盘、XDG 配置与首批分发格式。
+2. Phase 3 的契约、第二代控制界面、模拟器验证和 Android 真机到 Windows Chrome 的局域网播放均已完成。
+3. 网络切换、客户端中断、Unicode 文件名和大文件多次跳转继续作为发布前增强矩阵，不阻塞 Phase 3 完成状态。
+4. 下一步进入 Phase 4，单独验证 Linux WebKitGTK、托盘、XDG 配置与首批分发格式。
 5. Phase 5 再统一版本号、Git tag、Headless/Desktop/Android 构建和 SHA256 清单。

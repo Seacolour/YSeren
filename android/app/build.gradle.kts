@@ -69,6 +69,9 @@ android {
         getByName("main") {
             assets.srcDir(rootProject.file("../frontend/dist"))
         }
+        getByName("test") {
+            resources.srcDir(rootProject.file("../contracts/fixtures"))
+        }
     }
 
     composeOptions {
@@ -92,4 +95,6 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -4,7 +4,7 @@
 
 ## 功能
 
-- **/stream/**：把本地目录挂载为可播放的 HTTP 路由（浏览器/手机可直接播放，支持 Range）
+- **/stream/{source}/{relativePath}**：把本地媒体挂载为可播放的 HTTP 路由（浏览器/手机可直接播放，支持 Range）
 - **/api/videos**：前端用的 JSON 列表接口（递归扫描、搜索、分页）
 - **视频 + 音频**：默认支持 mp4/mkv/webm/mov/avi + mp3/flac/wav/aac/ogg 等格式
 - **前端 UI（Svelte）**：手机适配的文件浏览/搜索/最近播放
@@ -59,22 +59,27 @@ cd frontend && npm install && npm run dev
 
 ## Android 方向
 
-仓库现在开始包含一个 Android 侧的 MVP 脚手架，目标不是“手机播放端”，而是“手机作为媒体源，对局域网暴露 HTTP 流媒体”。
+仓库包含第二代 Android 应用，目标不是“手机播放端”，而是“手机作为媒体源，对局域网暴露 HTTP 流媒体”。应用使用与 Desktop 一致的产品语言，并针对移动端采用“共享 / 媒体源 / 设置”三页底部导航。
 
 - Android 项目入口：[`android/README.md`](./android/README.md)
 - 方案说明：[`docs/android-share-mvp.md`](./docs/android-share-mvp.md)
 - 当前 Android MVP 端点：
   - `/`（APK 内置 Web UI）
   - `/api/status`
+  - `/api/version`
   - `/api/tree`
   - `/api/tree?path=...`
   - `/playlist.m3u`
-  - `/stream/<relative-path>`
+  - `/stream/android/<relative-path>`（标准地址）
+  - `/stream/<relative-path>`（旧地址兼容）
 
-当前这部分仍处于原型阶段，核心路线是：
+当前 Android 实现已经完成 Phase 3 的契约、第二代控制界面、模拟器和真机局域网验证，核心路线是：
 - 用 Android Storage Access Framework 选择目录
 - 用 foreground service 持续共享
 - 用轻量本地 HTTP 服务把目录内容扩散到局域网
+- 继续由浏览器中的 Svelte Web Player 承担媒体播放
+
+雷电模拟器中已验证目录授权、媒体扫描、服务启停、端口热重启、Web Player 浏览和 MP4 实际播放；Android 真机也已通过 Wi-Fi 局域网地址向 Windows Chrome 提供目录浏览和媒体播放，Phase 3 的真机跨设备链路已完成验收。
 
 ## 仓库信息
 
