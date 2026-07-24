@@ -97,6 +97,33 @@ func TestStreamHandlerAllowsOnlyGetAndHead(t *testing.T) {
 	}
 }
 
+func TestNormalizeSingleRangeMatchesCrossPlatformPolicy(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		value string
+		want  string
+		ok    bool
+	}{
+		{value: "", want: "", ok: true},
+		{value: " bytes= 0 - 3 ", want: "bytes=0-3", ok: true},
+		{value: "bytes=4-", want: "bytes=4-", ok: true},
+		{value: "bytes=-4", want: "bytes=-4", ok: true},
+		{value: "bytes=0-99", want: "bytes=0-99", ok: true},
+		{value: "bytes=99-", ok: false},
+		{value: "bytes=-0", ok: false},
+		{value: "bytes=4-2", ok: false},
+		{value: "bytes=0-1,4-5", ok: false},
+		{value: "bytes=abc-def", ok: false},
+		{value: "items=0-3", ok: false},
+	}
+	for _, test := range tests {
+		got, ok := normalizeSingleRange(test.value, 10)
+		if got != test.want || ok != test.ok {
+			t.Errorf("normalizeSingleRange(%q, 10) = %q, %v; want %q, %v", test.value, got, ok, test.want, test.ok)
+		}
+	}
+}
+
 func TestMediaContentType(t *testing.T) {
 	t.Parallel()
 	tests := map[string]string{

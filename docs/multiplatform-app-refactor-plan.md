@@ -1,6 +1,6 @@
 # YSeren 多平台应用化重构计划
 
-- 状态：Phase 0、Phase 1、Phase 2 Windows Desktop MVP、Phase 3 Android 均已完成；下一阶段为 Phase 4 Linux Desktop
+- 状态：Phase 0、Phase 1、Phase 2 Windows Desktop MVP、Phase 3 Android、Phase 4-a Linux Headless 原生验证均已完成；下一阶段为 Phase 5 发布整合，Phase 4-b Linux Desktop GUI 延后
 - 适用平台：Windows、Linux、Android
 - 播放端：现代浏览器
 - 关联文档：[YSeren 项目推进计划](./task.md)
@@ -10,7 +10,7 @@
 本文档用于指导 YSeren 从当前的“Go 单可执行文件 + YAML + Svelte Web UI”结构，逐步演进为同时支持以下产品入口的多平台工具：
 
 - 面向熟悉配置和后台运行场景的 Headless 版本。
-- 面向普通桌面用户的 Windows/Linux Desktop 版本。
+- 面向普通 Windows 用户的 Desktop 版本，以及条件具备后再推进的 Linux Desktop 版本。
 - 面向移动媒体源场景的 Android 应用。
 - 作为所有平台统一播放入口的浏览器 Web Player。
 
@@ -32,8 +32,8 @@ YSeren 解决的问题是：
   - Headless 版本。
   - Desktop GUI 版本。
 - Linux 作为媒体源：
-  - Headless 版本优先。
-  - Desktop GUI 在 Windows MVP 稳定后推进。
+  - Phase 4-a 优先完成 Headless 原生运行、浏览器播放和发行包验证。
+  - Phase 4-b 在具备可测试的 Linux GUI 环境后再推进 Desktop GUI。
 - Android 作为媒体源：
   - 通过 Storage Access Framework 选择目录。
   - 通过前台服务在局域网持续共享。
@@ -84,7 +84,7 @@ flowchart TD
 | 产品 | 面向用户 | 配置方式 | 主要产物 |
 |------|----------|----------|----------|
 | YSeren Headless | 高级用户、后台运行、服务器 | YAML、命令行参数 | 单可执行文件 + 示例 YAML |
-| YSeren Desktop | 普通 Windows/Linux 用户 | GUI 自动管理，允许导入/导出 YAML | 安装包、Desktop Portable 包 |
+| YSeren Desktop | 普通 Windows 用户；后续 Linux GUI 用户 | GUI 自动管理，允许导入/导出 YAML | Windows 安装包/Portable；Linux Desktop 产物延后 |
 | YSeren Android | Android 媒体源用户 | 原生应用内设置 | APK |
 | YSeren Web Player | 所有播放设备 | 无需安装 | 嵌入各媒体源产物 |
 
@@ -96,7 +96,7 @@ flowchart TD
 - YSeren-Headless-Linux-arm64.tar.gz
 - YSeren-Desktop-Windows-x64-Setup.exe
 - YSeren-Desktop-Windows-x64-Portable.zip
-- YSeren-Desktop-Linux-x64.AppImage 或对应发行版包
+- YSeren-Desktop-Linux-x64.AppImage 或对应发行版包（Phase 4-b，暂缓）
 - YSeren-Android.apk
 - SHA256SUMS.txt
 
@@ -211,7 +211,7 @@ Desktop 是“控制外壳”，不是播放器。
 
 ### 7.1 信息架构
 
-Windows/Linux Desktop 与 Android 尽量使用一致的三层结构：
+Windows Desktop、未来的 Linux Desktop 与 Android 尽量使用一致的三层结构：
 
 1. 共享
    - 服务运行状态。
@@ -273,7 +273,7 @@ Windows Phase 2 已确认采用 Wails v2.12.0 + Svelte 5。Desktop 作为独立�
 - 安装包使用 NSIS，采用当前用户权限并安装到 `%LOCALAPPDATA%\Programs\YSeren`，不要求 UAC。
 - 安装模式使用 `%APPDATA%\YSeren`，EXE 同目录存在 YAML 时切换为 Portable 模式。
 - 浏览器继续承担媒体播放；Desktop 只负责本地控制和平台集成。
-- Linux WebKitGTK、托盘和分发格式验证推迟到 Phase 4，不影响 Windows MVP 的框架决定。
+- Linux WebKitGTK、托盘和 GUI 分发格式验证归入 Phase 4-b；Phase 4-a 只验证无 GUI 依赖的 Headless，不影响 Windows MVP 的框架决定。
 
 ## 8. Web Player 的长期定位
 
@@ -538,23 +538,77 @@ GUI 会降低共享门槛，因此在面向普通用户发布前，必须先收�
 - 雷电模拟器使用 NAT，模拟器显示的 `172.16.1.15:1479` 无法由 Windows 直接访问，因此模拟器浏览器结果只记录为“模拟器 + ADB 转发”。随后已在 Android 真机上从 `内部存储 / Movies` 识别 24 个媒体文件，并由同一 Wi-Fi 下的 Windows Chrome 直接访问 `http://192.168.50.171:1479/`，完成标准目录树浏览和媒体实际播放；Phase 3 真机跨设备验收通过。
 - Web Player 播放页移除了与 Chrome 等浏览器原生媒体菜单重复的自建倍速按钮，播放速度继续交由浏览器原生控件处理。
 
-### Phase 4：Linux Desktop
+### Phase 4：Linux 平台
 
-目标：在不削弱 Linux Headless 的前提下提供可安装 GUI。
+Phase 4 拆分为当前推进的 Headless 基础阶段和条件具备后再推进的 Desktop 阶段。Phase 4-a 是 Linux 平台的基础建设；Phase 4-b 复用同一个 Go Core，但不阻塞 Windows Desktop、Android、Linux Headless 和 Phase 5 的首轮整合发布。
+
+#### Phase 4-a：Linux Headless 原生验证
+
+状态：已完成（2026-07-24）。
+
+目标：确认现有 Go Core 和 Headless 入口可以在 Linux 中原生编译、运行、共享媒体并形成可交付发行包，不引入任何 GUI、WebView 或托盘依赖。
+
+当前验证环境：
+
+- Windows 主机上的 WSL2。
+- Ubuntu 24.04.3 LTS、x86_64、systemd 已启用。
+- 仓库通过 `/mnt/d/Code/yseren` 的 DrvFS 挂载访问。
+- WSL 使用 Node.js 20.20.0、npm 10.8.2、Go 1.24.4、curl、tar 和 sha256sum。
 
 任务：
 
-- 验证目标发行版的 WebView、托盘和目录选择器。
-- 明确最低支持发行版或运行库。
-- 选择 AppImage、deb、rpm、tar.gz 中的首批分发格式。
-- 适配 XDG 配置和日志目录。
-- 验证桌面环境差异和无托盘环境的退化行为。
+- 在 WSL 中完成前端生产构建、`go test ./...`、`go vet ./...` 和 `CGO_ENABLED=0` 原生构建。
+- 确认产物是 Linux amd64 ELF 单文件，不依赖 Wails、WebKitGTK、托盘或其他 GUI 运行库。
+- 分别使用 `/mnt/d` DrvFS 目录和 WSL 原生 ext4 目录验证媒体扫描，覆盖权限、大小写、符号链接、中文、空格和 Unicode 路径。
+- 启动 Linux Headless，验证 `/api/status`、`/api/tree`、`/api/version`、标准流地址、播放列表、GET、HEAD、206 Range 和 416。
+- 从 Windows Chrome 通过 WSL localhost 转发访问 Web Player，完成目录浏览、视频/音频播放和进度拖动。
+- 验证端口占用、不可读目录、客户端中断、`SIGINT` 和 `SIGTERM` 优雅关闭。
+- 对 Linux amd64 `tar.gz` 执行“解压到干净目录 -> 配置 -> 启动 -> 浏览器播放 -> SHA256”冒烟测试。
+- 保留 Linux arm64 的 CGO-disabled 交叉构建；没有 arm64 真机时明确记录为“构建通过、运行未验证”。
+- 复用现有 `ubuntu-latest` CI，并视需要增加 Linux 可执行文件启动和 HTTP smoke test。
+- 可选提供 systemd unit 示例，使用显式 `-config` 路径，不改变现有 Headless 配置发现规则。
 
 验收：
 
-- Linux Headless 仍可作为无 GUI 依赖的单文件运行。
-- 至少一个 Desktop 分发格式完成安装、启动、共享和卸载验证。
-- GUI 缺少托盘或系统组件时有明确降级提示。
+- Ubuntu WSL 中前端构建、Go 测试、vet 和 Linux amd64 原生构建通过。
+- Linux amd64 二进制可以从 WSL 原生文件系统和 DrvFS 媒体目录启动并共享。
+- Windows Chrome 可以访问 WSL 中运行的 YSeren，并正常浏览、播放和拖动媒体。
+- HTTP 契约、路径安全、文件权限和进程信号行为符合现有跨平台基线。
+- Linux amd64 发行包可独立解压运行；Linux arm64 至少完成交叉构建。
+- 验证结果明确标记为 WSL Linux 运行时证据，不冒充独立 Linux 物理设备或真实 Linux LAN 入站验证。
+
+完成记录：
+
+- 在 WSL 原生 ext4 工作副本中完成 `npm ci`、Svelte/Vite 生产构建、`go test ./...`、`go vet ./...` 和 `CGO_ENABLED=0` Linux amd64 构建；产物确认为 stripped、statically linked 的 x86-64 ELF，无 Wails、WebKitGTK 或其他 GUI 动态依赖。
+- WSL 无法直接连接 npm 与 Go 公共依赖源，因此验证使用 Windows 已下载依赖构建的隔离离线缓存；Linux 专用原生前端依赖仍由 WSL 安装并实际执行，未复用 Windows `node_modules`。
+- 使用 `/mnt/d/Code/yseren/resource` 的 DrvFS 媒体和 WSL ext4 权限夹具共同验证 MP4、MP3、ZIP 忽略、大小写、中文、空格、Unicode、不可读文件/目录及符号链接。
+- Go Headless 补齐 `/api/status` 和 `/playlist.m3u`；扫描结果现在跳过不可读资源与越界符号链接，并对安全的文件符号链接使用目标文件元数据。
+- Go 流入口与 Android 统一为单 Range 契约；实际进程验证 GET、HEAD、固定/开放/后缀 `206`，以及越界、多段、畸形 Range 的 `416`。
+- Windows Chrome 通过 WSL localhost 转发完成目录浏览、视频和音频实际解码播放；视频进度从开头跳转到约 16.6 秒，控制台无错误。
+- 端口占用、慢速客户端中断、服务继续可用、`SIGINT` 和 `SIGTERM` 零状态退出均通过；相同矩阵已固化到 `scripts/linux-headless-smoke.sh` 并接入 Ubuntu CI 与 Linux amd64 Release 归档验证。
+- Linux amd64 `tar.gz` 已完成干净解压、启动、HTTP 冒烟和 SHA256 校验；Linux arm64 产物确认为静态 aarch64 ELF，但因无 arm64 设备仅记录为“交叉构建通过、运行未验证”。
+- 本阶段证据仅代表 Ubuntu 24.04 WSL2 Linux 运行时与 Windows-to-WSL localhost 访问，不代表独立 Linux 物理机、真实 Linux 局域网入站、防火墙或 systemd 部署验收；这些仍可在后续发布验证中补充。
+
+#### Phase 4-b：Linux Desktop GUI
+
+状态：暂缓，待具备可测试的 Linux GUI 环境后推进。
+
+目标：在 Phase 4-a 已验证的 Linux Headless 和 Go Core 之上，提供普通 Linux 桌面用户可安装的 GUI 控制外壳。
+
+任务：
+
+- 选择具有代表性的 Linux GUI 发行版或虚拟机作为支持基线。
+- 验证 WebKitGTK、Wails、托盘和系统目录选择器。
+- 适配 XDG 配置、日志目录和桌面启动方式。
+- 选择 AppImage、deb、rpm 或 tar.gz 中的首批 GUI 分发格式。
+- 验证不同桌面环境以及无托盘环境下的退化行为。
+
+验收：
+
+- Desktop 与 Headless 继续复用同一 Go Core，不启动外置 yseren 子进程。
+- 至少一个 Linux Desktop 分发格式完成安装、启动、共享、托盘或退化行为以及卸载验证。
+- GUI 缺少 WebView、托盘或系统组件时有明确提示。
+- Phase 4-b 未完成时，不影响 Linux Headless 的构建、维护和正式发布。
 
 ### Phase 5：发布整合与体验打磨
 
@@ -563,7 +617,7 @@ GUI 会降低共享门槛，因此在面向普通用户发布前，必须先收�
 任务：
 
 - 统一版本注入，修复非 tag 构建误显示为最近正式版本的问题。
-- 一个 tag 构建全部 Headless、Desktop 和 Android 产物。
+- 一个 tag 构建全部已完成入口的产物：Headless、Windows Desktop 和 Android；Linux Desktop 在 Phase 4-b 完成后再纳入。
 - 生成 SHA256SUMS。
 - 更新 README 下载选择说明。
 - 编写 Headless、Desktop、Android 的最短启动路径。
@@ -572,7 +626,7 @@ GUI 会降低共享门槛，因此在面向普通用户发布前，必须先收�
 验收：
 
 - Release 中各产物版本一致。
-- 用户能明确选择 Desktop、Headless 或 Android。
+- 用户能明确选择 Windows Desktop、Headless 或 Android；Linux Desktop 未提供时有清晰说明。
 - 旧版 YAML 可直接用于新版 Headless，并可由 Desktop 导入。
 - 发布前验证矩阵全部完成并留有记录。
 
@@ -644,8 +698,9 @@ GUI 会降低共享门槛，因此在面向普通用户发布前，必须先收�
 4. Desktop 技术验证。
 5. Windows Desktop MVP。
 6. Android 契约收敛。
-7. Linux Desktop。
+7. Linux Headless 原生验证。
 8. Release 整合。
+9. Linux Desktop GUI（具备验证环境后）。
 
 ## 15. 主要风险与应对
 
@@ -655,7 +710,7 @@ GUI 会降低共享门槛，因此在面向普通用户发布前，必须先收�
 | Desktop 框架污染 Headless 依赖 | 高 | 两个 cmd 入口，Core 不引用 GUI 包 |
 | Go 与 Android API 漂移 | 高 | 共享契约样例和跨端测试 |
 | 浏览器无法播放已扫描格式 | 中 | 区分共享与播放能力，提供失败提示/外部链接 |
-| Linux WebView/托盘差异 | 中 | Headless 保底，先技术验证再承诺发行版 |
+| Linux WebView/托盘差异 | 中 | 归入 Phase 4-b，不能阻塞 Phase 4-a Headless 和首轮整合发布 |
 | GUI 让用户误共享敏感文件 | 高 | 只允许媒体文件、禁止目录列表、显示共享范围 |
 | Desktop 与 Headless 配置互相覆盖 | 中 | 明确配置优先级，UI 偏好与核心 YAML 分离 |
 | 多端同时推进导致范围失控 | 高 | 按 Phase 顺序，Windows MVP 后再收敛 Android/Linux |
@@ -691,7 +746,7 @@ YSeren 应保留自己的差异：
 
 - Android Phase 3 保持单来源并固定使用 `android` 作为契约来源名；是否扩展多来源留待后续反馈决定。
 - Windows Desktop 首版是否包含二维码。
-- Linux 首批支持的发行版和打包格式。
+- Phase 4-a 以 Ubuntu 24.04 WSL 和 Linux `tar.gz` 为首个 Headless 验证基线；Phase 4-b 的 GUI 发行版和打包格式后续确认。
 - 首个 Desktop 版本是否定为 v0.2.0。
 - 是否在 Desktop MVP 后加入 mDNS 发现。
 
@@ -702,5 +757,6 @@ Windows MVP 完成后不立即并行铺开所有平台，下一批工作按以�
 1. 固化 Windows Desktop 的自动化和手工验收记录，处理首批用户反馈，但不在当前阶段构建正式 Release。
 2. Phase 3 的契约、第二代控制界面、模拟器验证和 Android 真机到 Windows Chrome 的局域网播放均已完成。
 3. 网络切换、客户端中断、Unicode 文件名和大文件多次跳转继续作为发布前增强矩阵，不阻塞 Phase 3 完成状态。
-4. 下一步进入 Phase 4，单独验证 Linux WebKitGTK、托盘、XDG 配置与首批分发格式。
-5. Phase 5 再统一版本号、Git tag、Headless/Desktop/Android 构建和 SHA256 清单。
+4. Phase 4-a 已在 Ubuntu WSL 中完成 Linux Headless 原生构建、运行、Windows Chrome 播放、信号和发行包验证。
+5. 下一步进入 Phase 5，统一版本号、Git tag、Headless/Windows Desktop/Android 构建和 SHA256 清单。
+6. Phase 4-b Linux Desktop GUI 等具备可测试的 Linux 图形环境后再推进，不阻塞上述发布路线。

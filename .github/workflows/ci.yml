@@ -55,6 +55,14 @@ jobs:
       - name: Build Go project
         run: go build ./...
 
+      - name: Build Linux Headless smoke binary
+        run: |
+          mkdir -p build
+          CGO_ENABLED=0 go build -trimpath -o build/yseren-linux-smoke .
+
+      - name: Smoke test Linux Headless
+        run: bash scripts/linux-headless-smoke.sh build/yseren-linux-smoke
+
       - name: Build Android debug APK
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon

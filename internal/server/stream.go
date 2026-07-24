@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	coreconfig "yseren/internal/config"
@@ -44,8 +45,56 @@ func newStreamHandler(conf *coreconfig.Config) http.Handler {
 
 		w.Header().Set("Content-Type", media.ContentType(resolvedPath))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		normalizedRange, validRange := normalizeSingleRange(r.Header.Get("Range"), info.Size())
+		if !validRange {
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(info.Size(), 10))
+			WriteError(w, http.StatusRequestedRangeNotSatisfiable, "requested range not satisfiable")
+			return
+		}
+		if normalizedRange != "" {
+			r.Header.Set("Range", normalizedRange)
+		}
 		http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 	})
+}
+
+func normalizeSingleRange(value string, totalLength int64) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", true
+	}
+	if totalLength <= 0 || !strings.HasPrefix(trimmed, "bytes=") || strings.Contains(trimmed, ",") {
+		return "", false
+	}
+
+	candidate := strings.TrimSpace(strings.TrimPrefix(trimmed, "bytes="))
+	parts := strings.SplitN(candidate, "-", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	startPart := strings.TrimSpace(parts[0])
+	endPart := strings.TrimSpace(parts[1])
+	if startPart == "" {
+		suffixLength, err := strconv.ParseInt(endPart, 10, 64)
+		if err != nil || suffixLength <= 0 {
+			return "", false
+		}
+		return "bytes=-" + strconv.FormatInt(suffixLength, 10), true
+	}
+
+	start, err := strconv.ParseInt(startPart, 10, 64)
+	if err != nil || start < 0 || start >= totalLength {
+		return "", false
+	}
+	if endPart == "" {
+		return "bytes=" + strconv.FormatInt(start, 10) + "-", true
+	}
+	end, err := strconv.ParseInt(endPart, 10, 64)
+	if err != nil || end < start {
+		return "", false
+	}
+	return "bytes=" + strconv.FormatInt(start, 10) + "-" + strconv.FormatInt(end, 10), true
 }
 
 func parseStreamRequestPath(requestPath string) (sourceName, relPath string, ok bool) {

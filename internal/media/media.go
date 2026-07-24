@@ -3,6 +3,7 @@ package media
 import (
 	"io/fs"
 	"mime"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -94,7 +95,16 @@ func HasExtension(filename string, extensions []string) bool {
 // 不可访问的单个文件或子目录会被跳过，以保持原有乐观扫描语义。
 func Scan(root string, classifier Classifier) ([]Entry, error) {
 	entries := make([]Entry, 0, 1024)
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(absoluteRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	err = filepath.WalkDir(resolvedRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil || entry == nil || entry.IsDir() {
 			return nil
 		}
@@ -102,17 +112,37 @@ func Scan(root string, classifier Classifier) ([]Entry, error) {
 			return nil
 		}
 
-		info, err := entry.Info()
+		resolvedPath := path
+		if entry.Type()&os.ModeSymlink != 0 {
+			resolvedPath, err = filepath.EvalSymlinks(path)
+			if err != nil || !isPathWithin(resolvedRoot, resolvedPath) {
+				return nil
+			}
+		}
+		if !classifier.IsMediaFile(resolvedPath) {
+			return nil
+		}
+
+		info, err := os.Stat(resolvedPath)
 		if err != nil {
 			return nil
 		}
-		relPath, err := filepath.Rel(root, path)
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		file, err := os.Open(resolvedPath)
+		if err != nil {
+			return nil
+		}
+		_ = file.Close()
+
+		relPath, err := filepath.Rel(resolvedRoot, path)
 		if err != nil {
 			return nil
 		}
 
 		mediaType := "video"
-		if classifier.IsAudioFile(entry.Name()) {
+		if classifier.IsAudioFile(resolvedPath) {
 			mediaType = "audio"
 		}
 		entries = append(entries, Entry{
@@ -125,6 +155,14 @@ func Scan(root string, classifier Classifier) ([]Entry, error) {
 		return nil
 	})
 	return entries, err
+}
+
+func isPathWithin(root, target string) bool {
+	relative, err := filepath.Rel(root, target)
+	if err != nil || filepath.IsAbs(relative) || relative == ".." {
+		return false
+	}
+	return !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 // ContentType 返回常见媒体扩展名的稳定 MIME，避免依赖平台注册表差异。

@@ -15,6 +15,7 @@ const defaultCacheTTL = 5 * time.Second
 
 type Options struct {
 	FrontendHandler http.Handler
+	StatusHandler   http.Handler
 	VersionHandler  http.Handler
 	Version         string
 	Logger          *slog.Logger
@@ -53,11 +54,17 @@ func New(conf *coreconfig.Config, options Options) *Application {
 	app.mux.Handle(StreamRoutePrefix, app.StreamHandler())
 	app.mux.HandleFunc("/api/videos", app.VideosHandler())
 	app.mux.HandleFunc("/api/tree", app.TreeHandler())
+	statusHandler := options.StatusHandler
+	if statusHandler == nil {
+		statusHandler = newStaticStatusHandler(&app.config)
+	}
+	app.mux.Handle("/api/status", statusHandler)
 	versionHandler := options.VersionHandler
 	if versionHandler == nil {
 		versionHandler = coreversion.New(options.Version, logger).Handler()
 	}
 	app.mux.Handle("/api/version", versionHandler)
+	app.mux.HandleFunc("/playlist.m3u", app.PlaylistHandler())
 	app.mux.Handle("/", frontend)
 	return app
 }

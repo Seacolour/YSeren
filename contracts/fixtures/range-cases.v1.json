@@ -56,6 +56,27 @@
       "range": "bytes=99-",
       "status": 416,
       "contentRange": "bytes */10"
+    },
+    {
+      "name": "multiple-ranges",
+      "method": "GET",
+      "range": "bytes=0-1,4-5",
+      "status": 416,
+      "contentRange": "bytes */10"
+    },
+    {
+      "name": "malformed-range",
+      "method": "GET",
+      "range": "bytes=abc-def",
+      "status": 416,
+      "contentRange": "bytes */10"
+    },
+    {
+      "name": "unsupported-range-unit",
+      "method": "GET",
+      "range": "items=0-3",
+      "status": 416,
+      "contentRange": "bytes */10"
     }
   ]
 }

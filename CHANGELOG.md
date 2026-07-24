@@ -7,6 +7,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Go Headless `/api/status` and `/playlist.m3u` endpoints aligned with the Android sharing contract.
+- Repeatable Linux Headless smoke coverage for status, tree, playlist, streaming, Range, permissions, symlinks, port conflicts, client interruption, and process signals.
+
+### Changed
+
+- Linux media scans now resolve safe file symlinks, report target metadata, and omit unreadable or escaping entries.
+- Go streaming now enforces the same single-range policy as Android, returning `416` for malformed and multiple ranges.
+- CI now builds a CGO-disabled Linux Headless ELF and runs the Linux smoke matrix.
+
 ## [0.1.2] - 2026-05-18
 
 ### Added

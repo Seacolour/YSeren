@@ -51,6 +51,7 @@ type HandlerFactory func(conf *coreconfig.Config) (http.Handler, error)
 type Options struct {
 	ListenAddress     string
 	FrontendHandler   http.Handler
+	StatusHandler     http.Handler
 	VersionHandler    http.Handler
 	Version           string
 	Logger            *slog.Logger
@@ -93,22 +94,42 @@ func New(options Options) *Runtime {
 	if options.MaxHeaderBytes <= 0 {
 		options.MaxHeaderBytes = 1 << 20
 	}
-	if options.HandlerFactory == nil {
-		options.HandlerFactory = func(conf *coreconfig.Config) (http.Handler, error) {
-			application := appserver.New(conf, appserver.Options{
-				FrontendHandler: options.FrontendHandler,
-				VersionHandler:  options.VersionHandler,
-				Version:         options.Version,
-				Logger:          options.Logger,
-			})
-			return application.Handler(), nil
-		}
-	}
-	return &Runtime{
+	runtime := &Runtime{
 		options: options,
 		logger:  options.Logger,
 		status:  Status{State: StateStopped},
 	}
+	if runtime.options.HandlerFactory == nil {
+		runtime.options.HandlerFactory = func(conf *coreconfig.Config) (http.Handler, error) {
+			statusHandler := runtime.options.StatusHandler
+			if statusHandler == nil {
+				sourceName := ""
+				if len(conf.Sources) == 1 {
+					sourceName = conf.Sources[0].Name
+				}
+				statusHandler = appserver.NewStatusHandler(func() appserver.StatusResponse {
+					status := runtime.Status()
+					return appserver.StatusResponse{
+						State:    string(status.State),
+						Name:     "YSeren",
+						Source:   sourceName,
+						RootName: sourceName,
+						Port:     status.Port,
+						URLs:     status.URLs,
+					}
+				})
+			}
+			application := appserver.New(conf, appserver.Options{
+				FrontendHandler: runtime.options.FrontendHandler,
+				StatusHandler:   statusHandler,
+				VersionHandler:  runtime.options.VersionHandler,
+				Version:         runtime.options.Version,
+				Logger:          runtime.options.Logger,
+			})
+			return application.Handler(), nil
+		}
+	}
+	return runtime
 }
 
 func (r *Runtime) Start(ctx context.Context, conf coreconfig.Config) error {

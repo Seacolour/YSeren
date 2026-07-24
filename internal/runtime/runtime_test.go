@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -222,6 +223,24 @@ func assertRuntimeReachable(t *testing.T, runtime *Runtime) {
 	_, _ = io.Copy(io.Discard, response.Body)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/tree status = %d", response.StatusCode)
+	}
+
+	statusResponse, err := http.Get(status.URLs[0] + "api/status")
+	if err != nil {
+		t.Fatalf("GET /api/status: %v", err)
+	}
+	defer statusResponse.Body.Close()
+	var body struct {
+		State  string   `json:"state"`
+		Source string   `json:"source"`
+		Port   int      `json:"port"`
+		URLs   []string `json:"urls"`
+	}
+	if err := json.NewDecoder(statusResponse.Body).Decode(&body); err != nil {
+		t.Fatalf("decode /api/status: %v", err)
+	}
+	if statusResponse.StatusCode != http.StatusOK || body.State != string(StateRunning) || body.Source != "media" || body.Port != status.Port || len(body.URLs) != 1 {
+		t.Fatalf("GET /api/status response = status %d body %#v", statusResponse.StatusCode, body)
 	}
 }
 

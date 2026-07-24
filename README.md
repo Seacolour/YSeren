@@ -5,7 +5,9 @@
 ## 功能
 
 - **/stream/{source}/{relativePath}**：把本地媒体挂载为可播放的 HTTP 路由（浏览器/手机可直接播放，支持 Range）
-- **/api/videos**：前端用的 JSON 列表接口（递归扫描、搜索、分页）
+- **/api/tree**：Web Player 使用的递归媒体目录接口；`/api/videos` 继续保留兼容
+- **/api/status + /api/version**：提供不暴露本地路径的运行状态与版本信息
+- **/playlist.m3u**：生成可供第三方播放器导入的媒体播放列表
 - **视频 + 音频**：默认支持 mp4/mkv/webm/mov/avi + mp3/flac/wav/aac/ogg 等格式
 - **前端 UI（Svelte）**：手机适配的文件浏览/搜索/最近播放
 - **单文件交付**：Go `embed` 把 `frontend/dist` 打进 exe
@@ -16,9 +18,23 @@
 
 仓库内提供了示例配置 [`yseren.example.yaml`](./yseren.example.yaml)。实际运行时请使用本地 `yseren.yaml` 或 `yseren.yml`，该文件默认不会提交到 git。
 
-```bash
-yseren.exe -config D:/path/to/yseren.yaml
+Windows Headless：
+
+```powershell
+.\yseren.exe -config D:\path\to\yseren.yaml
 ```
+
+Linux Headless：
+
+```bash
+tar -xzf yseren_vX.Y.Z_linux_amd64.tar.gz
+cd yseren_vX.Y.Z_linux_amd64
+cp yseren.example.yaml yseren.yaml
+# 编辑 yseren.yaml，将 sources[].path 改成实际媒体目录
+./yseren -config ./yseren.yaml
+```
+
+启动后访问终端输出的 `http://localhost:1479/` 或局域网地址。Linux Headless 是无 GUI 依赖的静态单文件；当前验证基线为 Ubuntu 24.04 WSL，Linux Desktop GUI 留待后续阶段。
 
 示例配置：
 
@@ -29,7 +45,7 @@ server:
 
 sources:
   - name: videos
-    path: "D:/Videos"
+    path: "D:/Videos"  # Linux 示例：/home/your-name/Videos
 
 # 可选：自定义支持的媒体格式（完整扫描名单）
 # media_extensions:
@@ -56,6 +72,16 @@ go run .
 # 前端（需要另开终端）
 cd frontend && npm install && npm run dev
 ```
+
+Go Headless 当前提供以下跨平台基础端点：
+
+- `/`：嵌入式 Svelte Web Player
+- `/api/status`
+- `/api/version`
+- `/api/tree`
+- `/api/videos`（兼容接口）
+- `/playlist.m3u`
+- `/stream/{source}/{relativePath}`
 
 ## Android 方向
 
@@ -103,6 +129,9 @@ cd frontend && npm install && npm run dev
 # 如果你坚持手动构建，记得顺序必须是：
 # 1) cd frontend && npm ci && npm run build && cd ..
 # 2) go build -o yseren.exe
+
+# Linux 静态 Headless
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o yseren .
 ```
 
 ## 校验
@@ -112,6 +141,9 @@ go test ./...
 go vet ./...
 
 cd frontend && npm run build
+
+# 在 Linux/WSL 中对实际 ELF 执行 HTTP、Range、权限和信号冒烟
+bash scripts/linux-headless-smoke.sh ./yseren
 ```
 
 ## Releases
@@ -131,5 +163,3 @@ cd frontend && npm run build
 ## License
 
 Apache-2.0. See [`LICENSE`](./LICENSE).
-
-访问 `http://localhost:1479/` 或局域网 IP。
