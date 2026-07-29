@@ -1,6 +1,6 @@
 # YSeren 多平台应用化重构计划
 
-- 状态：Phase 0、Phase 1、Phase 2 Windows Desktop MVP、Phase 3 Android、Phase 4-a Linux Headless 原生验证均已完成；下一阶段为 Phase 5 发布整合，Phase 4-b Linux Desktop GUI 延后
+- 状态：Phase 0、Phase 1、Phase 2 Windows Desktop MVP、Phase 3 Android、Phase 4-a Linux Headless 原生验证均已完成；Phase 5 的 v0.2.0 发布候选正在验证，Phase 4-b Linux Desktop GUI 延后
 - 适用平台：Windows、Linux、Android
 - 播放端：现代浏览器
 - 关联文档：[YSeren 项目推进计划](./task.md)
@@ -611,6 +611,8 @@ Phase 4 拆分为当前推进的 Headless 基础阶段和条件具备后再推�
 - Phase 4-b 未完成时，不影响 Linux Headless 的构建、维护和正式发布。
 
 ### Phase 5：发布整合与体验打磨
+
+状态：发布候选验证中（2026-07-29）。执行范围、版本契约、产物矩阵和发布验证记录见 [Phase 5 发布准备](./phase-5-release-preparation.md)。
 
 目标：形成可长期维护的多产品 Release。
 

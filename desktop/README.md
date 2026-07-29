@@ -85,6 +85,9 @@ wails build -clean
 
 输出文件为 `desktop/build/bin/YSeren.exe`。
 
+非正式构建在应用内显示为“开发版本”。正式 Release 会从同一个
+`vMAJOR.MINOR.PATCH` tag 注入 Go 运行版本、Windows EXE 产品版本和安装器版本。
+
 ## 构建用户级安装包
 
 先安装 NSIS 3.x，并确保 `makensis.exe` 所在目录已经加入当前终端的 `PATH`，然后运行：

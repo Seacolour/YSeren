@@ -7,6 +7,23 @@ android {
     namespace = "io.github.seacolour.yseren.mobile"
     compileSdk = 34
 
+    val yserenVersionName = providers.gradleProperty("yserenVersionName")
+        .orElse("dev")
+        .get()
+        .trim()
+    val yserenVersionCode = providers.gradleProperty("yserenVersionCode")
+        .orElse("1")
+        .get()
+        .trim()
+        .toIntOrNull()
+        ?: error("yserenVersionCode must be an integer")
+    require(Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$""").matches(yserenVersionName) || yserenVersionName == "dev") {
+        "yserenVersionName must be dev or MAJOR.MINOR.PATCH, got: $yserenVersionName"
+    }
+    require(yserenVersionCode > 0) {
+        "yserenVersionCode must be positive"
+    }
+
     val androidKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
     val androidKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
     val androidKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
@@ -22,8 +39,8 @@ android {
         applicationId = "io.github.seacolour.yseren.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.1.2"
+        versionCode = yserenVersionCode
+        versionName = yserenVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

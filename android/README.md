@@ -76,6 +76,16 @@ From PowerShell in `android/`:
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --console=plain --no-daemon
 ```
 
+Local builds use `versionName=dev`. A formal release injects the shared tag
+version and a monotonically increasing Android version code:
+
+```powershell
+.\gradlew.bat :app:assembleRelease `
+  '-PyserenVersionName=0.2.0' `
+  '-PyserenVersionCode=2000' `
+  --no-daemon
+```
+
 Without release signing variables, the local release output is
 `app/build/outputs/apk/release/app-release-unsigned.apk`.
 

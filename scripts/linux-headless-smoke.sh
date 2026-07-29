@@ -152,7 +152,12 @@ grep -Fq '/stream/linux/inside-link.mp4' <<<"$playlist" || fail "playlist omitte
 if grep -Eq 'archive\.zip|unreadable\.mp4|escape-link\.mp4' <<<"$playlist"; then
   fail "playlist exposed an inaccessible file"
 fi
-curl -fsS "${base_url}api/version" | grep -Fq '"version"' || fail "/api/version response is invalid"
+version_response="$(curl -fsS "${base_url}api/version")"
+printf '%s' "$version_response" | grep -Fq '"version"' || fail "/api/version response is invalid"
+if [[ -n "${YSEREN_EXPECTED_VERSION:-}" ]]; then
+  printf '%s' "$version_response" | grep -Fq "\"version\":\"${YSEREN_EXPECTED_VERSION}\"" \
+    || fail "/api/version does not report ${YSEREN_EXPECTED_VERSION}"
+fi
 curl -fsS "$base_url" | grep -Fq '<title>YSeren</title>' || fail "embedded Web Player was not served"
 
 sed "s/port: 0/port: $port/" "$config_path" >"$work_dir/conflict.yaml"
