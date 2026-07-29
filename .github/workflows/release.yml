@@ -36,7 +36,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.24.1"
 
       - name: Validate release metadata
         id: metadata
@@ -97,7 +97,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.24.1"
 
       - name: Build Web Player
         working-directory: frontend
@@ -181,7 +181,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: desktop/go.mod
+          go-version: "1.24.1"
 
       - name: Install Wails
         shell: pwsh
