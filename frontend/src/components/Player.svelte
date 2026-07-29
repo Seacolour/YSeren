@@ -12,12 +12,6 @@
     let { item, onClose, onEnded: onEndedCallback } = $props();
 
     import { clearProgress, getProgress, makeMediaId, setProgress } from "../progress.svelte.js";
-    import {
-        PLAYBACK_RATES,
-        formatPlaybackRate,
-        playbackState,
-        setPlaybackRate,
-    } from "../playback.svelte.js";
     import { formatTime } from "../utils.js";
 
     /** @type {HTMLVideoElement | HTMLAudioElement | null} */
@@ -28,10 +22,6 @@
     let lastWriteAt = 0;
 
     let resumeToast = $state("");
-
-    function applyPlaybackRate() {
-        if (mediaEl) mediaEl.playbackRate = playbackState.rate;
-    }
 
     function syncForMediaId() {
         if (trackedId === mediaId) return;
@@ -44,7 +34,6 @@
     /** @param {HTMLVideoElement | HTMLAudioElement} node */
     function mediaRef(node) {
         mediaEl = node;
-        applyPlaybackRate();
         return {
             destroy() {
                 if (mediaEl === node) mediaEl = null;
@@ -54,7 +43,6 @@
 
     function tryRestore() {
         syncForMediaId();
-        applyPlaybackRate();
         if (!mediaEl || !mediaId || restoredOnce) return;
         const p = getProgress(mediaId);
         if (!p || p.ended) {
@@ -99,39 +87,12 @@
         onEndedCallback?.();
     }
 
-    /** @param {number} rate */
-    function selectRate(rate) {
-        setPlaybackRate(rate);
-        applyPlaybackRate();
-    }
-
-    $effect(() => {
-        const rate = playbackState.rate;
-        if (mediaEl) mediaEl.playbackRate = rate;
-    });
 </script>
 
 <main class="player">
     <div class="player-head">
         <button type="button" class="btn" onclick={onClose}>返回 <span class="kbd-hint">Esc</span></button>
         <div class="player-title">{item.name}</div>
-    </div>
-
-    <div class="speed-bar" role="group" aria-label="播放倍速">
-        <span class="speed-label">倍速</span>
-        <div class="speed-options">
-            {#each PLAYBACK_RATES as rate (rate)}
-                <button
-                    type="button"
-                    class="speed-btn"
-                    class:active={playbackState.rate === rate}
-                    aria-pressed={playbackState.rate === rate}
-                    onclick={() => selectRate(rate)}
-                >
-                    {formatPlaybackRate(rate)}
-                </button>
-            {/each}
-        </div>
     </div>
 
     {#if item.mediaType === "audio"}
@@ -205,49 +166,6 @@
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;
-    }
-
-    .speed-bar {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: var(--space-sm);
-        padding: var(--space-sm);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        background: var(--color-bg-card);
-        box-shadow: var(--shadow-sm);
-    }
-    .speed-label {
-        font-size: var(--font-size-sm);
-        font-weight: 700;
-        color: var(--color-text-muted);
-        flex-shrink: 0;
-    }
-    .speed-options {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-    .speed-btn {
-        padding: 5px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--color-border-strong);
-        background: var(--color-bg-subtle);
-        color: inherit;
-        font-size: var(--font-size-sm);
-        font-weight: 600;
-        cursor: pointer;
-        transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
-    }
-    .speed-btn:hover {
-        border-color: var(--color-border-hover);
-        background: var(--color-notice-bg);
-    }
-    .speed-btn.active {
-        border-color: var(--color-primary);
-        background: var(--color-primary);
-        color: #fff;
     }
 
     .video {

@@ -3,51 +3,85 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag to build, for example v0.1.0"
+        description: "Version to build, for example v0.2.0"
         required: true
         type: string
+      create_draft:
+        description: "Create a Draft GitHub Release (the tag must already exist at this commit)"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
-env:
-  TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-
 jobs:
-  build:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+      android_version_code: ${{ steps.metadata.outputs.android_version_code }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.1"
+
+      - name: Validate release metadata
+        id: metadata
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          CREATE_DRAFT: ${{ github.event_name == 'push' || inputs.create_draft }}
+        run: |
+          set -euo pipefail
+          go run ./cmd/release-metadata -tag "$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+          if [ "$CREATE_DRAFT" = "true" ]; then
+            git rev-parse --verify "refs/tags/$TAG_NAME" >/dev/null
+            tag_commit="$(git rev-list -n 1 "$TAG_NAME")"
+            if [ "$tag_commit" != "$GITHUB_SHA" ]; then
+              echo "Tag $TAG_NAME points to $tag_commit, expected $GITHUB_SHA" >&2
+              exit 1
+            fi
+          fi
+
+  headless:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - goos: windows
+          - slug: windows-x64
+            goos: windows
             goarch: amd64
-            archive_ext: zip
-            binary_name: yseren.exe
-          - goos: windows
-            goarch: arm64
-            archive_ext: zip
-            binary_name: yseren.exe
-          - goos: linux
+            platform: Windows-x64
+            archive: zip
+            binary: yseren.exe
+          - slug: linux-x64
+            goos: linux
             goarch: amd64
-            archive_ext: tar.gz
-            binary_name: yseren
-          - goos: linux
+            platform: Linux-x64
+            archive: tar.gz
+            binary: yseren
+          - slug: linux-arm64
+            goos: linux
             goarch: arm64
-            archive_ext: tar.gz
-            binary_name: yseren
-          - goos: darwin
-            goarch: amd64
-            archive_ext: tar.gz
-            binary_name: yseren
-          - goos: darwin
-            goarch: arm64
-            archive_ext: tar.gz
-            binary_name: yseren
+            platform: Linux-arm64
+            archive: tar.gz
+            binary: yseren
 
     steps:
       - name: Checkout
@@ -63,49 +97,183 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.24.1"
 
-      - name: Install frontend dependencies
+      - name: Build Web Player
         working-directory: frontend
-        run: npm ci
+        run: |
+          npm ci
+          npm run build
 
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-
-      - name: Build release archive
+      - name: Build Headless archive
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
+          artifact="YSeren-${RELEASE_TAG}-Headless-${{ matrix.platform }}"
+          package_dir="package/$artifact"
+          mkdir -p "$package_dir" dist
+          cp README.md LICENSE yseren.example.yaml "$package_dir/"
 
-          mkdir -p dist package
-
-          artifact="yseren_${TAG_NAME}_${{ matrix.goos }}_${{ matrix.goarch }}"
-          package_dir="package/${artifact}"
-
-          mkdir -p "${package_dir}"
-          cp README.md LICENSE yseren.example.yaml "${package_dir}/"
-
-          version="${TAG_NAME#v}"
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -trimpath -ldflags="-s -w -X main.Version=${version}" -o "${package_dir}/${{ matrix.binary_name }}" .
+            go build -trimpath -ldflags="-s -w -X main.Version=${RELEASE_VERSION}" \
+            -o "$package_dir/${{ matrix.binary }}" .
 
-          if [ "${{ matrix.archive_ext }}" = "zip" ]; then
-            (
-              cd package
-              zip -qr "../dist/${artifact}.zip" "${artifact}"
-            )
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            (cd package && zip -qr "../dist/${artifact}.zip" "$artifact")
           else
-            tar -czf "dist/${artifact}.tar.gz" -C package "${artifact}"
+            tar -czf "dist/${artifact}.tar.gz" -C package "$artifact"
           fi
 
-      - name: Upload packaged artifacts
+      - name: Smoke test Linux x64 archive
+        if: matrix.slug == 'linux-x64'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          YSEREN_EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          artifact="YSeren-${RELEASE_TAG}-Headless-Linux-x64"
+          mkdir smoke-extract
+          tar -xzf "dist/${artifact}.tar.gz" -C smoke-extract
+          bash scripts/linux-headless-smoke.sh "smoke-extract/${artifact}/yseren"
+
+      - name: Verify Linux arm64 binary
+        if: matrix.slug == 'linux-arm64'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          binary="package/YSeren-${RELEASE_TAG}-Headless-Linux-arm64/yseren"
+          file "$binary" | grep -F "ARM aarch64"
+          if ldd "$binary" 2>&1 | grep -vq "not a dynamic executable"; then
+            echo "Linux arm64 binary is not static" >&2
+            exit 1
+          fi
+
+      - name: Upload Headless artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: release-headless-${{ matrix.slug }}
           path: dist/*
+          if-no-files-found: error
+
+  desktop-windows:
+    needs: prepare
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/frontend/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.1"
+
+      - name: Install Wails
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+          wails version
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          $nsisPath = "${env:ProgramFiles(x86)}\NSIS"
+          if (-not (Test-Path -LiteralPath "$nsisPath\makensis.exe")) {
+            $nsisPath = "$env:ProgramFiles\NSIS"
+          }
+          if (-not (Test-Path -LiteralPath "$nsisPath\makensis.exe")) {
+            throw "makensis.exe was not installed"
+          }
+          $nsisPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build shared Web Player
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set Desktop product version
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $path = 'desktop/wails.json'
+          $config = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $config.info.productVersion = $env:RELEASE_VERSION
+          $config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+
+      - name: Build Windows Desktop installer
+        working-directory: desktop
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          wails build -nsis -clean -trimpath -ldflags "-s -w -X main.Version=$env:RELEASE_VERSION"
+
+      - name: Package and verify Windows Desktop
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dist = New-Item -ItemType Directory -Path dist -Force
+          $setupSource = 'desktop/build/bin/YSeren-Desktop-Windows-amd64-Setup.exe'
+          $exeSource = 'desktop/build/bin/YSeren.exe'
+          if (-not (Test-Path -LiteralPath $setupSource) -or -not (Test-Path -LiteralPath $exeSource)) {
+            throw 'Wails did not produce the expected Windows files'
+          }
+
+          $setupName = "YSeren-$env:RELEASE_TAG-Desktop-Windows-x64-Setup.exe"
+          Copy-Item -LiteralPath $setupSource -Destination (Join-Path $dist $setupName)
+
+          $portableName = "YSeren-$env:RELEASE_TAG-Desktop-Windows-x64-Portable"
+          $portableDir = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP $portableName) -Force
+          Copy-Item -LiteralPath $exeSource -Destination (Join-Path $portableDir 'YSeren.exe')
+          Copy-Item -LiteralPath README.md, LICENSE, yseren.example.yaml -Destination $portableDir
+          Copy-Item -LiteralPath desktop/README.md -Destination (Join-Path $portableDir 'DESKTOP-README.md')
+          @'
+          server:
+            port: 1479
+            log_level: info
+
+          sources: []
+          '@ | Set-Content -LiteralPath (Join-Path $portableDir 'yseren.yaml') -Encoding utf8
+          Compress-Archive -LiteralPath $portableDir -DestinationPath (Join-Path $dist "$portableName.zip")
+
+          $expectedVersion = [Version]::Parse("$env:RELEASE_VERSION.0")
+          foreach ($path in @($exeSource, (Join-Path $dist $setupName))) {
+            $versionInfo = (Get-Item -LiteralPath $path).VersionInfo
+            if ($versionInfo.FileVersionRaw -ne $expectedVersion -or $versionInfo.ProductVersionRaw -ne $expectedVersion) {
+              throw "$path has file/product versions $($versionInfo.FileVersionRaw)/$($versionInfo.ProductVersionRaw), expected $expectedVersion"
+            }
+          }
+
+      - name: Upload Windows Desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-windows-x64
+          path: dist/*
+          if-no-files-found: error
 
   android:
+    needs: prepare
     runs-on: ubuntu-latest
     env:
       HAS_ANDROID_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
@@ -126,6 +294,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -133,63 +302,93 @@ jobs:
       - name: Make Android Gradle wrapper executable
         run: chmod +x android/gradlew
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+      - name: Require Android release signing
+        shell: bash
+        run: |
+          if [ "$HAS_ANDROID_SIGNING" != "true" ]; then
+            echo "All Android signing secrets are required for a formal release" >&2
+            exit 1
+          fi
 
-      - name: Build frontend
+      - name: Build shared Web Player
         working-directory: frontend
-        run: npm run build
+        run: |
+          npm ci
+          npm run build
 
       - name: Decode Android signing keystore
-        if: env.HAS_ANDROID_SIGNING == 'true'
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
 
-      - name: Build Android release APK
+      - name: Test and build signed Android APK
         working-directory: android
         env:
           ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --no-daemon
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          ANDROID_VERSION_CODE: ${{ needs.prepare.outputs.android_version_code }}
+        run: |
+          ./gradlew :app:testDebugUnitTest :app:lintVitalRelease :app:assembleRelease \
+            -PyserenVersionName="$RELEASE_VERSION" \
+            -PyserenVersionCode="$ANDROID_VERSION_CODE" \
+            --no-daemon
 
-      - name: Package Android APK
+      - name: Package and verify Android APK
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          ANDROID_VERSION_CODE: ${{ needs.prepare.outputs.android_version_code }}
         run: |
           set -euo pipefail
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          metadata="android/app/build/outputs/apk/release/output-metadata.json"
+          test -f "$apk"
+          test -f "$metadata"
 
-          mkdir -p dist
-          signed_apk="android/app/build/outputs/apk/release/app-release.apk"
-          unsigned_apk="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          python - "$metadata" "$RELEASE_VERSION" "$ANDROID_VERSION_CODE" <<'PY'
+          import json
+          import sys
 
-          if [ -f "$signed_apk" ]; then
-            cp "$signed_apk" "dist/yseren_${TAG_NAME}_android.apk"
-          elif [ -f "$unsigned_apk" ]; then
-            cp "$unsigned_apk" "dist/yseren_${TAG_NAME}_android-unsigned.apk"
-          else
-            echo "No release APK was produced" >&2
-            exit 1
-          fi
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          element = data["elements"][0]
+          assert element["versionName"] == sys.argv[2], element
+          assert element["versionCode"] == int(sys.argv[3]), element
+          PY
+
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+
+          mkdir dist
+          cp "$apk" "dist/YSeren-${RELEASE_TAG}-Android.apk"
 
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-android
           path: dist/*
+          if-no-files-found: error
 
   release:
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || inputs.create_draft == true
     needs:
-      - build
+      - prepare
+      - headless
+      - desktop-windows
       - android
+    runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v4
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -197,16 +396,40 @@ jobs:
           pattern: release-*
           merge-multiple: true
 
-      - name: Generate checksums
+      - name: Validate assets and generate checksums
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           cd dist
-          sha256sum * > SHA256SUMS.txt
+          expected=(
+            "YSeren-${RELEASE_TAG}-Desktop-Windows-x64-Setup.exe"
+            "YSeren-${RELEASE_TAG}-Desktop-Windows-x64-Portable.zip"
+            "YSeren-${RELEASE_TAG}-Headless-Windows-x64.zip"
+            "YSeren-${RELEASE_TAG}-Headless-Linux-x64.tar.gz"
+            "YSeren-${RELEASE_TAG}-Headless-Linux-arm64.tar.gz"
+            "YSeren-${RELEASE_TAG}-Android.apk"
+          )
+          for asset in "${expected[@]}"; do
+            test -s "$asset"
+          done
+          actual_count="$(find . -maxdepth 1 -type f | wc -l)"
+          if [ "$actual_count" -ne "${#expected[@]}" ]; then
+            echo "Expected ${#expected[@]} assets, found $actual_count" >&2
+            find . -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+          sha256sum "${expected[@]}" > SHA256SUMS.txt
 
-      - name: Publish GitHub Release
+      - name: Create Draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG_NAME }}
-          generate_release_notes: true
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: YSeren ${{ needs.prepare.outputs.tag }}
+          body_path: docs/releases/${{ needs.prepare.outputs.tag }}.md
+          draft: true
+          prerelease: false
+          make_latest: false
+          fail_on_unmatched_files: true
           files: dist/*

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">YSeren Share</string>
-    <string name="notification_title">YSeren Android Share</string>
-    <string name="notification_channel_name">LAN sharing</string>
-    <string name="notification_channel_description">Foreground notification for local media sharing</string>
-    <string name="stop_share">Stop</string>
+    <string name="app_name">YSeren</string>
+    <string name="notification_title">YSeren 正在共享</string>
+    <string name="notification_channel_name">局域网媒体共享</string>
+    <string name="notification_channel_description">显示 YSeren 本机媒体共享的运行状态</string>
+    <string name="stop_share">停止共享</string>
 </resources>

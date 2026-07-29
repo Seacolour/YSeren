@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  validate:
+  core-and-android:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,13 +24,14 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.24.1"
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -38,16 +39,15 @@ jobs:
       - name: Make Android Gradle wrapper executable
         run: chmod +x android/gradlew
 
-      - name: Install frontend dependencies
+      - name: Build Web Player
         working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run build
 
       - name: Run Go tests
-        run: go test ./...
+        run: go test ./... -count=1
 
       - name: Run Go vet
         run: go vet ./...
@@ -55,6 +55,90 @@ jobs:
       - name: Build Go project
         run: go build ./...
 
-      - name: Build Android debug APK
+      - name: Validate release metadata CLI
+        run: |
+          test "$(go run ./cmd/release-metadata -tag v0.2.0 | tr '\n' ' ')" = \
+            "tag=v0.2.0 version=0.2.0 android_version_code=2000 "
+          if go run ./cmd/release-metadata -tag 0.2.0; then
+            echo "Invalid release tag unexpectedly succeeded" >&2
+            exit 1
+          fi
+
+      - name: Build Linux Headless smoke binary
+        run: |
+          mkdir -p build
+          CGO_ENABLED=0 go build -trimpath -ldflags="-X main.Version=0.2.0" -o build/yseren-linux-smoke .
+
+      - name: Smoke test Linux Headless
+        env:
+          YSEREN_EXPECTED_VERSION: 0.2.0
+        run: bash scripts/linux-headless-smoke.sh build/yseren-linux-smoke
+
+      - name: Test, lint and build Android debug APK
         working-directory: android
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:testDebugUnitTest :app:lintVitalRelease :app:assembleDebug --no-daemon
+
+  desktop-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/frontend/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.1"
+
+      - name: Build shared Web Player
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Desktop frontend
+        working-directory: desktop/frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run build
+
+      - name: Test Desktop Go module
+        working-directory: desktop
+        run: |
+          go test ./... -count=1
+          go vet ./...
+
+      - name: Install Wails and NSIS
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+          choco install nsis --no-progress -y
+          $nsisPath = "${env:ProgramFiles(x86)}\NSIS"
+          if (-not (Test-Path -LiteralPath "$nsisPath\makensis.exe")) {
+            $nsisPath = "$env:ProgramFiles\NSIS"
+          }
+          if (-not (Test-Path -LiteralPath "$nsisPath\makensis.exe")) {
+            throw "makensis.exe was not installed"
+          }
+          $nsisPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PATH = "$nsisPath;$env:PATH"
+          wails version
+
+      - name: Build Windows Desktop installer
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          wails build -nsis -clean -trimpath -ldflags "-X main.Version=dev"
+          if (-not (Test-Path -LiteralPath 'build/bin/YSeren-Desktop-Windows-amd64-Setup.exe')) {
+            throw 'Desktop installer was not generated'
+          }

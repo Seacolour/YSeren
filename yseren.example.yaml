@@ -4,6 +4,8 @@ server:
 
 sources:
   - name: videos
+    # Windows example: "D:/Media/Videos"
+    # Linux example: "/home/your-name/Videos"
     path: "D:/Media/Videos"
 
 # Optional: extend the full media scan list.

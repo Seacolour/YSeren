@@ -12,22 +12,17 @@ data class ShareEntry(
     val relPath: String,
     val isDirectory: Boolean,
     val size: Long,
-    val lastModified: Long,
+    val modTime: Long,
     val mimeType: String?,
 )
 
-data class ShareTreeNode(
-    val type: String,
-    val name: String,
-    val relPath: String,
-    val source: String,
-    val url: String? = null,
-    val size: Long = 0L,
-    val lastModified: Long = 0L,
-    val mimeType: String? = null,
-    val mediaType: String? = null,
-    val children: List<ShareTreeNode> = emptyList(),
-)
+data class MediaScanSummary(
+    val videoCount: Int,
+    val audioCount: Int,
+) {
+    val totalCount: Int
+        get() = videoCount + audioCount
+}
 
 class DocumentTreeRepository(private val context: Context) {
     fun resolve(rootUri: Uri, relPath: String): DocumentFile? {
@@ -99,6 +94,15 @@ class DocumentTreeRepository(private val context: Context) {
         return results.sortedBy { it.relPath.lowercase(Locale.ROOT) }
     }
 
+    fun scanSummary(rootUri: Uri): MediaScanSummary {
+        val media = collectMediaFiles(rootUri)
+        val audioCount = media.count { isAudioFile(it.name) }
+        return MediaScanSummary(
+            videoCount = media.size - audioCount,
+            audioCount = audioCount,
+        )
+    }
+
     fun buildMediaTree(rootUri: Uri, rootName: String, source: String): ShareTreeNode {
         val root = DocumentFile.fromTreeUri(context, rootUri)
             ?: return ShareTreeNode(type = "dir", name = rootName, relPath = "", source = source)
@@ -143,9 +147,9 @@ class DocumentTreeRepository(private val context: Context) {
                 name = displayName,
                 relPath = relPath,
                 source = source,
-                url = streamUrl(relPath),
+                url = streamUrl(source, relPath),
                 size = document.length(),
-                lastModified = document.lastModified(),
+                modTime = toUnixSeconds(document.lastModified()),
                 mimeType = guessMimeType(document),
                 mediaType = if (isAudioFile(displayName)) "audio" else "video",
             )
@@ -171,7 +175,6 @@ class DocumentTreeRepository(private val context: Context) {
             name = displayName,
             relPath = relPath,
             source = source,
-            lastModified = document.lastModified(),
             children = children,
         )
     }
@@ -182,7 +185,7 @@ class DocumentTreeRepository(private val context: Context) {
             relPath = relPath,
             isDirectory = isDirectory,
             size = if (isDirectory) 0L else length(),
-            lastModified = lastModified(),
+            modTime = toUnixSeconds(lastModified()),
             mimeType = type,
         )
     }
@@ -210,11 +213,15 @@ class DocumentTreeRepository(private val context: Context) {
         return ext in AUDIO_EXTENSIONS
     }
 
-    private fun streamUrl(relPath: String): String {
+    private fun streamUrl(source: String, relPath: String): String {
         val encoded = relPath.split('/')
             .filter { it.isNotEmpty() }
             .joinToString("/") { Uri.encode(it) }
-        return "/stream/$encoded"
+        return "/stream/${Uri.encode(source)}/$encoded"
+    }
+
+    private fun toUnixSeconds(milliseconds: Long): Long {
+        return if (milliseconds > 0L) milliseconds / 1000L else 0L
     }
 
     companion object {

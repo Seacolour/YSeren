@@ -1,106 +1,125 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	webfrontend "yseren/frontend"
+	coreconfig "yseren/internal/config"
+	appruntime "yseren/internal/runtime"
+	appserver "yseren/internal/server"
+	coreversion "yseren/internal/version"
 )
 
 func main() {
 	defer func() {
-		if r := recover(); r != nil {
-			WriteCrashLog(fmt.Sprintf("panic: %v", r), nil)
-			panic(r)
+		if recovered := recover(); recovered != nil {
+			WriteCrashLog(fmt.Sprintf("panic: %v", recovered), nil)
+			panic(recovered)
 		}
 	}()
 
-	// 1. 加载配置：支持 -config 指定；默认按"当前目录 -> exe 同目录"查找 yseren.yaml/yml
 	configPath := flag.String("config", "", "配置文件路径（默认查找 yseren.yaml 或 yseren.yml：当前目录 -> exe 同目录）")
 	flag.Parse()
 
-	conf, usedPath, err := LoadConfigAuto(*configPath)
+	conf, usedPath, err := coreconfig.LoadConfigAuto(*configPath)
 	if err != nil {
-		errMsg := fmt.Sprintf("无法加载配置文件: %v", err)
-		fmt.Fprintln(os.Stderr, errMsg)
-		WriteCrashLog(errMsg, err)
-		startErrorServer(errMsg)
+		errorMessage := fmt.Sprintf("无法加载配置文件: %v", err)
+		fmt.Fprintln(os.Stderr, errorMessage)
+		WriteCrashLog(errorMessage, err)
+		startErrorServer(errorMessage)
 		return
 	}
 
-	// 初始化日志系统
 	InitLogger(conf.Server.LogLevel)
 	LogInfo("配置加载完成", "path", usedPath)
-
-	// 2. 循环挂载所有资源点
 	for _, source := range conf.Sources {
-		// 注意：URL 路径建议加个前缀，比如 /stream/我的动漫
-		route := streamRoutePattern(source.Name)
-
-		// 创建文件服务器
-		fs := http.FileServer(http.Dir(source.Path))
-
-		// 关键点：使用 StripPrefix 确保文件路径查找正确
-		http.Handle(route, http.StripPrefix(route, fs))
-
-		LogInfo("挂载资源", "name", source.Name, "path", source.Path, "route", route)
+		LogInfo("挂载资源", "name", source.Name, "path", source.Path, "route", appserver.StreamRoutePattern(source.Name))
 	}
 
-	// 2. API：给前端提供视频文件列表（递归扫描 + 搜索/分页）
-	http.HandleFunc("/api/videos", ListVideosHandler(conf))
-	// 2.1 API：目录树（保留层级，便于前端做"文件夹浏览"）
-	http.HandleFunc("/api/tree", ListTreeHandler(conf))
-	// 2.2 API：版本信息与更新检查
-	http.HandleFunc("/api/version", VersionHandler())
+	application := appruntime.New(appruntime.Options{
+		FrontendHandler: webfrontend.Handler(),
+		Version:         Version,
+		Logger:          Logger,
+	})
+	if err := application.Start(context.Background(), *conf); err != nil {
+		LogError("服务启动失败", "error", err)
+		WriteCrashLog("服务启动失败", err)
+		os.Exit(1)
+	}
 
-	// 3. 前端：优先用 embed 的静态资源提供手机 UI；如果没打包 dist，就回退到传统目录（方便本地开发）
-	http.Handle("/", FrontendHandler())
+	printStartup(application.Status())
+	LogInfo("服务启动", "addr", application.Status().Address, "port", application.Status().Port)
 
-	// 3. 启动服务
-	addr := fmt.Sprintf(":%d", conf.Server.Port)
+	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	select {
+	case <-signalContext.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := application.Stop(shutdownContext); err != nil {
+			LogError("服务停止失败", "error", err)
+			WriteCrashLog("服务停止失败", err)
+			os.Exit(1)
+		}
+		LogInfo("服务已停止")
+	case <-application.Done():
+		status := application.Status()
+		if status.State == appruntime.StateFailed {
+			err := fmt.Errorf("HTTP 服务异常退出: %s", status.LastError)
+			LogError("服务异常退出", "error", err)
+			WriteCrashLog("服务异常退出", err)
+			os.Exit(1)
+		}
+	}
+}
 
-	// 启动信息（保持用户友好的输出）
+func printStartup(status appruntime.Status) {
 	fmt.Println()
 	fmt.Printf("  ✦ YSeren - 局域网媒体")
-	if v := normalizeVersion(Version); v != "" && v != "dev" {
-		fmt.Printf("  v%s", v)
+	if version := coreversion.Normalize(Version); version != "" && version != "dev" {
+		fmt.Printf("  v%s", version)
 	}
 	fmt.Println()
 	fmt.Printf("  ─────────────────────\n")
-	fmt.Printf("本机访问: http://localhost:%d/\n", conf.Server.Port)
-
-	lanIPs := ListLANIPv4()
-	if len(lanIPs) > 0 {
+	if len(status.URLs) > 0 {
+		fmt.Printf("本机访问: %s\n", status.URLs[0])
+	}
+	if len(status.URLs) > 1 {
 		fmt.Printf("局域网访问:\n")
-		for _, ip := range lanIPs {
-			fmt.Printf("  → http://%s:%d/\n", ip, conf.Server.Port)
+		for _, url := range status.URLs[1:] {
+			fmt.Printf("  → %s\n", url)
 		}
 	} else {
 		fmt.Printf("局域网: 未检测到可用的内网 IPv4\n")
 	}
 	fmt.Println()
-
-	LogInfo("服务启动", "addr", addr, "port", conf.Server.Port)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		LogError("服务启动失败", "error", err)
-		WriteCrashLog("服务启动失败", err)
-		os.Exit(1)
-	}
 }
 
 func startErrorServer(message string) {
 	const fallbackPort = 1479
-	addr := fmt.Sprintf(":%d", fallbackPort)
-
+	address := fmt.Sprintf(":%d", fallbackPort)
 	mux := http.NewServeMux()
-	mux.Handle("/", ErrorFrontendHandler(message))
+	mux.Handle("/", webfrontend.ErrorHandler(message))
 
 	fmt.Println()
 	fmt.Printf("  ✦ YSeren - 启动失败\n")
 	fmt.Printf("  ─────────────────────\n")
 	fmt.Printf("请打开浏览器查看错误信息: http://localhost:%d/\n", fallbackPort)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	server := &http.Server{
+		Addr:              address,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       time.Minute,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		WriteCrashLog("启动错误页失败", err)
 		fmt.Fprintf(os.Stderr, "启动错误页失败: %v\n", err)
 		os.Exit(1)
