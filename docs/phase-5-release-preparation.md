@@ -1,11 +1,13 @@
 # YSeren Phase 5 发布准备
 
-- 状态：发布候选验证中
+- 状态：发布准备与候选验收已完成
 - 基线日期：2026-07-24
 - 基线提交：`0b7a429`（Phase 4-a 完成）
+- 候选验收日期：2026-07-29
+- 候选提交：`16593c5`
 - 目标：在不引入 Linux Desktop GUI 的前提下，把 Headless、Windows Desktop 和 Android 整合为可重复、可验证的同版本 Release
 
-本文是 Phase 5 的执行与验收记录。当前尚未创建 tag 或公开正式版本。
+本文是 Phase 5 的执行与验收记录。候选验收阶段没有提前创建 tag 或公开版本；正式流程仍采用 tag 构建、Draft Release 复核、手工公开三道边界。
 
 ## 1. 建议版本与发布范围
 
@@ -64,13 +66,13 @@ android/app/build/outputs/apk/release/app-release-unsigned.apk
 
 正式产物必须由同一个 tag 对应的 GitHub Actions 工作流重新构建。
 
-## 3. 进入 Release 前必须补齐的差距
+## 3. 进入 Release 前已补齐的差距
 
 ### 3.1 统一版本契约
 
-当前版本来源并不统一：
+Phase 5 开始前的版本来源差距如下，现已按右栏规则统一：
 
-| 入口 | 当前行为 | Phase 5 要求 |
+| 入口 | Phase 5 前行为 | Phase 5 要求 |
 | --- | --- | --- |
 | Headless | `main.Version` 默认 `dev`，Release 使用 ldflags；本地 `build.ps1` 会从非精确 tag 的 `git describe` 误取最近版本 | 只有精确 SemVer tag 才显示正式版本，其他构建统一显示 `dev` |
 | Windows Desktop | Go 层 `Version` 默认 `dev`，`wails.json` 的 Windows 产品版本固定为 `0.0.0` | Go API、界面版本、EXE 元数据和安装器元数据全部来自同一个 tag |
@@ -93,7 +95,7 @@ android/app/build/outputs/apk/release/app-release-unsigned.apk
 
 ### 3.2 Release 工作流
 
-当前 `.github/workflows/release.yml` 尚缺 Windows Desktop 构建。Phase 5 应拆成以下职责：
+`.github/workflows/release.yml` 已补齐 Windows Desktop 构建，并拆成以下职责：
 
 1. `prepare`
    - 校验 tag 和提交关系。
@@ -121,7 +123,7 @@ android/app/build/outputs/apk/release/app-release-unsigned.apk
 
 ### 3.3 CI 门禁
 
-合并 Phase 5 前，CI 至少增加：
+Phase 5 CI 已增加：
 
 - Desktop `go test ./...` 和 `go vet ./...`。
 - Desktop Svelte 生产构建。
@@ -191,18 +193,18 @@ README 或独立文档必须覆盖：
 
 | 编号 | 产物/链路 | 验证内容 | 结果 | 证据 |
 | --- | --- | --- | --- | --- |
-| V01 | Windows Desktop Setup | 全新安装、首次选目录、共享、浏览器播放、卸载 | 待验证 | |
-| V02 | Windows Desktop Upgrade | 从上一正式版升级，配置和偏好保留 | 待验证 | |
-| V03 | Windows Desktop Portable | 解压运行、同目录 YAML、无安装依赖 | 待验证 | |
-| V04 | Windows Headless | 旧版 YAML 直接启动、Range 播放、优雅退出 | 待验证 | |
-| V05 | Linux x64 Headless | 干净解压、smoke、移动设备浏览器访问 | 待验证 | |
-| V06 | Linux arm64 Headless | ELF 架构与静态链接；真机状态明确标注 | 待验证 | |
-| V07 | Android APK | 使用 Release 签名安装并共享媒体 | 待验证 | |
-| V08 | Android Upgrade | 从 `v0.1.2` 原包覆盖安装，目录授权和设置保留 | 待验证 | |
-| V09 | 跨设备播放 | Windows → Android 浏览器、Android → Windows 浏览器 | 待验证 | |
-| V10 | 版本一致性 | API、Desktop 元数据、APK 和文件名均为同一版本 | 待验证 | |
-| V11 | 完整性 | 下载全部资产并通过 SHA256 校验 | 待验证 | |
-| V12 | 文档冷启动 | 未参与开发的用户按 README 完成首次共享 | 待验证 | |
+| V01 | Windows Desktop Setup | 全新安装、首次选目录、共享、浏览器播放、卸载 | 既有人工验证通过 | Phase 2 本机安装与共享验收；候选 CI 完成真实 NSIS 打包 |
+| V02 | Windows Desktop Upgrade | 从上一正式版升级，配置和偏好保留 | 首次正式 Desktop 不适用 | `v0.1.2` 未提供 Desktop；留作后续 Desktop 版本回归 |
+| V03 | Windows Desktop Portable | 解压运行、同目录 YAML、无安装依赖 | 候选自动验证通过 | 候选 ZIP 结构完整，EXE File/Product Version 均为 `0.2.0.0` |
+| V04 | Windows Headless | 旧版 YAML 直接启动、Range 播放、优雅退出 | 通过 | Phase 4-a 兼容验证与 `0.2.0` Windows 实际版本端点验证 |
+| V05 | Linux x64 Headless | 干净解压、smoke、移动设备浏览器访问 | 候选 smoke 通过 | Release run 与下载后 WSL2 复验均通过，`/api/version=0.2.0` |
+| V06 | Linux arm64 Headless | ELF 架构与静态链接；真机状态明确标注 | 构建门禁通过 | 静态 aarch64 ELF；真机仍未验证并已在 README/Release Notes 披露 |
+| V07 | Android APK | 使用 Release 签名安装并共享媒体 | 自动与既有真机验证通过 | 签名 APK 校验通过；Phase 3 已完成真机共享与播放验收 |
+| V08 | Android Upgrade | 从 `v0.1.2` 原包覆盖安装，目录授权和设置保留 | 签名连续性通过 | 候选与 `v0.1.2` 证书 SHA-256 一致；正式包覆盖安装留作发布后回归 |
+| V09 | 跨设备播放 | Windows → Android 浏览器、Android → Windows 浏览器 | 通过 | Phase 2/3 的本机、模拟器和 Android 真机跨设备验收 |
+| V10 | 版本一致性 | API、Desktop 元数据、APK 和文件名均为同一版本 | 候选验证通过 | Headless `0.2.0`、Desktop `0.2.0.0`、APK `0.2.0/2000` |
+| V11 | 完整性 | 下载全部资产并通过 SHA256 校验 | 候选验证通过 | 6 个候选资产数量、名称、非空和本地 SHA-256 已核对；正式 Draft 将生成 `SHA256SUMS.txt` |
+| V12 | 文档冷启动 | 未参与开发的用户按 README 完成首次共享 | 待外部试用 | README 已提供下载选择、三端最短路径、截图、安全与排障说明 |
 
 Linux arm64 在获得真实设备前可以通过构建门禁，但 Release 说明必须保留“运行未验证”，不能写成已完成真机验收。
 
@@ -231,9 +233,9 @@ Phase 5 实现时采用以下默认方向；如有新条件再调整：
 
 第一批代码工作应只处理第 1 步“统一版本”，避免同时修改三端版本、CI、打包和文档而难以定位问题。
 
-## 8. v0.2.0 发布候选验证进度
+## 8. v0.2.0 发布候选验收结果
 
-截至 2026-07-29，本地已完成：
+截至 2026-07-29，本地与远端已完成：
 
 - Web Player 和 Desktop 前端均使用 Vite `8.1.5`，`npm audit` 为 0 个已知漏洞，生产构建通过。
 - Go 全量测试、vet、显式 `0.2.0` 构建和非 tag `dev` 构建通过；两个实际 Windows Headless 二进制的 `/api/version` 均返回预期值。
@@ -241,5 +243,10 @@ Phase 5 实现时采用以下默认方向；如有新条件再调整：
 - Desktop Go 测试、vet、Svelte 构建和 Wails EXE 构建通过；EXE 的固定 File/Product Version 均为 `0.2.0.0`。
 - Ubuntu 24.04 WSL2 中的 Go 测试、vet、Linux x64 版本感知 smoke 通过；Linux arm64 为静态 aarch64 ELF。
 - GitHub Actions workflow 已通过 actionlint；README 本地链接、截图路径和 `git diff --check` 通过。
+- PR CI run [`30423012025`](https://github.com/Seacolour/YSeren/actions/runs/30423012025) 的 Core/Android 与 Windows Desktop/NSIS job 全部通过。
+- 候选 Release run [`30423199523`](https://github.com/Seacolour/YSeren/actions/runs/30423199523) 在 `create_draft=false` 下完成 3 个 Headless、Windows Desktop 和签名 Android APK 五路构建；Release job 按预期跳过，没有提前公开版本。
+- 下载后的 6 个候选资产名称、数量、归档结构和非空状态正确；Setup 与 Portable EXE 的 File/Product Version 均为 `0.2.0.0`。
+- Android 候选为 `versionName=0.2.0`、`versionCode=2000`，APK Signature Scheme v2 验证通过，签名证书 SHA-256 与 `v0.1.2` 一致。
+- Linux x64 候选归档下载后在 WSL2 重新执行版本感知 smoke 并通过；Linux arm64 保持“静态交叉构建通过、真机未验证”的公开说明。
 
-远端 Windows NSIS 打包、签名 Android APK、完整候选资产与 SHA256 仍由本次提交后的 GitHub Actions 验证。当前机器没有 NSIS，因此本地只验证 Wails EXE；正式安装包不得绕过远端 Windows job。
+正式 `v0.2.0` tag 流程必须从合并后的 `main` 重新构建 Draft Release，并在公开前再次核对 6 个资产、`SHA256SUMS.txt`、版本元数据与 Android 签名，不能直接把本地或 dry-run 文件上传为正式包。
