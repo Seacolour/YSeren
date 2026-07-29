@@ -105,18 +105,18 @@ jobs:
           npm ci
           npm run build
 
-      - name: Test Desktop Go module
-        working-directory: desktop
-        run: |
-          go test ./... -count=1
-          go vet ./...
-
       - name: Build Desktop frontend
         working-directory: desktop/frontend
         run: |
           npm ci
           npm audit --audit-level=high
           npm run build
+
+      - name: Test Desktop Go module
+        working-directory: desktop
+        run: |
+          go test ./... -count=1
+          go vet ./...
 
       - name: Install Wails and NSIS
         shell: pwsh
