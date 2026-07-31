@@ -187,9 +187,10 @@ Linux Headless 的 HTTP、Range、权限和信号冒烟：
 bash scripts/linux-headless-smoke.sh ./yseren
 ```
 
-Docker Headless 当前处于本地可行性验证阶段，可通过 Docker Desktop 构建
-现有 Go Core 的非 root、只读媒体挂载镜像。使用方式和已知容器网络边界见
-[Docker Headless 说明](./docker/README.md)。目前尚未发布官方镜像。
+Docker Headless 已完成本地可行性验证，并提供仅供测试的
+`seacolour/yseren:dev-amd64` 镜像。它不是稳定版本，也没有 `latest` 标签；
+本地构建、实验镜像用法及已知容器网络边界见
+[Docker Headless 说明](./docker/README.md)。
 
 正式 Release 由精确 `vMAJOR.MINOR.PATCH` tag 统一注入 Headless、Desktop 和 Android 版本，构建全部支持平台产物，生成 `SHA256SUMS.txt`，并先创建 Draft Release 供人工复核。
 

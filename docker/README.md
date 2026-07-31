@@ -3,8 +3,15 @@
 当前目录提供 YSeren Headless 的本地容器化验证骨架。它复用现有 Go
 Core 和内嵌 Web Player，不复制媒体文件，也不引入另一套服务实现。
 
-目前尚未向 Docker Hub、GHCR 或其他镜像仓库发布镜像。这里的命令只在
-本机 Docker Desktop 中构建 `yseren:local`。
+Docker Hub 上已有手动推送的 `seacolour/yseren:dev-amd64` 实验镜像。它只
+包含 `linux/amd64`，不是稳定发布，也没有 `latest` 标签。当前不可变摘要为：
+
+```text
+sha256:ac7c0f4c08a734c8b05d575e0667a6e91cf1790d7d55a978a6b32527c66f5232
+```
+
+本地构建仍是当前首选验证路径；实验镜像用于少量测试，不代表真实 NAS 或
+arm64 设备已经通过验证。
 
 ## 适用范围
 
@@ -51,6 +58,25 @@ docker compose up --build -d
 ```powershell
 docker compose down
 ```
+
+## 使用 Docker Hub 实验镜像
+
+当前实验镜像只支持 amd64。使用仓库中的 Compose 配置时：
+
+```powershell
+$env:YSEREN_MEDIA_PATH = 'D:/Media/Videos'
+$env:YSEREN_IMAGE = 'docker.io/seacolour/yseren:dev-amd64'
+docker compose pull yseren
+docker compose up -d --no-build
+```
+
+需要锁定已经验证的内容时，可以直接使用摘要而不是可变标签：
+
+```text
+docker.io/seacolour/yseren@sha256:ac7c0f4c08a734c8b05d575e0667a6e91cf1790d7d55a978a6b32527c66f5232
+```
+
+请勿自行推断或使用 `latest`，因为仓库目前没有发布该标签。
 
 Compose 会把：
 
@@ -109,7 +135,26 @@ bridge 网络中的 YSeren 只能看到容器自己的 `172.x.x.x` 地址，因�
 ## 正式发布前的剩余工作
 
 1. 增加可配置的外部访问地址，并验证 Desktop/Headless 不受影响。
-2. 在 CI 中用 Buildx 构建 `linux/amd64`、`linux/arm64`，运行 amd64 smoke。
-3. 确认镜像标签策略，例如版本 tag、次版本 tag 和 `latest`。
-4. 发布到目标仓库后记录不可变 digest，并按需生成 SBOM/签名。
-5. 在至少一种真实 NAS/arm64 设备上验证目录权限、性能和持续运行。
+2. 为 GitHub Actions 配置 Docker Hub PAT，并在主分支实际运行多架构工作流。
+3. 在至少一种真实 NAS/arm64 设备上验证目录权限、性能和持续运行。
+4. 确认稳定镜像的签名策略；工作流已配置生成 provenance 和 SBOM attestations。
+
+## GitHub Actions 发布策略
+
+[`docker-publish.yml`](../.github/workflows/docker-publish.yml) 会先构建 amd64
+镜像并运行容器级 smoke，再发布 `linux/amd64`、`linux/arm64` 清单：
+
+- 手动运行时只接受 `dev-*` 标签；留空则使用 `dev-<commit SHA>`。
+- 精确的 `vMAJOR.MINOR.PATCH` Git tag 会生成 `vMAJOR.MINOR.PATCH` 和
+  `MAJOR.MINOR.PATCH` 两个镜像标签。
+- 工作流不会创建 `latest`、主版本或次版本等可变稳定标签。
+- 如果对应版本标签已经存在，工作流会拒绝覆盖并直接失败。
+
+仓库需要配置两个 Actions secrets：
+
+- `DOCKERHUB_USERNAME`：Docker Hub 用户名（当前为 `seacolour`）。
+- `DOCKERHUB_TOKEN`：单独创建、具有仓库读写权限的 Docker Hub access token。
+
+不要从 Docker Desktop 提取或复制其登录凭据；应在 Docker Hub 单独创建 PAT，
+再通过 GitHub 仓库的 Actions secrets 页面保存。工作流合并到默认分支并配置
+secrets 后，才应手动发布新的多架构开发标签。

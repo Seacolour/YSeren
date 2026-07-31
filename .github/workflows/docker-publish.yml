@@ -1,0 +1,185 @@
+name: Docker Publish
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      development_tag:
+        description: "Optional dev-* tag; blank uses dev-<12-character commit SHA>"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: seacolour/yseren
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.metadata.outputs.image_tag }}
+      is_release: ${{ steps.metadata.outputs.is_release }}
+      tags: ${{ steps.metadata.outputs.tags }}
+      version: ${{ steps.metadata.outputs.version }}
+
+    steps:
+      - name: Validate tag policy
+        id: metadata
+        shell: bash
+        env:
+          DEVELOPMENT_TAG: ${{ inputs.development_tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            image_tag="${DEVELOPMENT_TAG:-dev-${GITHUB_SHA:0:12}}"
+            if [[ ! "$image_tag" =~ ^dev-[a-z0-9][a-z0-9._-]{0,122}$ ]]; then
+              echo "Manual image tags must begin with dev- and contain only lowercase letters, digits, dot, underscore, or hyphen." >&2
+              exit 1
+            fi
+            version="$image_tag"
+            is_release="false"
+            tags="docker.io/${IMAGE_NAME}:${image_tag}"
+          else
+            image_tag="$GITHUB_REF_NAME"
+            if [[ ! "$image_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "Release image tags require an exact vMAJOR.MINOR.PATCH Git tag." >&2
+              exit 1
+            fi
+            version="${image_tag#v}"
+            is_release="true"
+            tags="docker.io/${IMAGE_NAME}:${image_tag}"$'\n'"docker.io/${IMAGE_NAME}:${version}"
+          fi
+
+          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
+          echo "is_release=$is_release" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  verify-amd64:
+    needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build amd64 smoke image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: yseren:ci
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=docker-headless
+          cache-to: type=gha,mode=max,scope=docker-headless
+
+      - name: Smoke test container
+        run: bash docker/smoke.sh yseren:ci "${{ needs.prepare.outputs.version }}"
+
+  publish:
+    needs:
+      - prepare
+      - verify-amd64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require Docker Hub credentials
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets are required." >&2
+            exit 1
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Refuse to overwrite release tags
+        if: needs.prepare.outputs.is_release == 'true'
+        shell: bash
+        env:
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r image_ref; do
+            if docker buildx imagetools inspect "$image_ref" >/dev/null 2>&1; then
+              echo "Refusing to overwrite existing release image tag: $image_ref" >&2
+              exit 1
+            fi
+          done <<< "$TAGS"
+
+      - name: Build and publish multi-architecture image
+        id: publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ needs.prepare.outputs.tags }}
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=docker-headless
+          cache-to: type=gha,mode=max,scope=docker-headless
+          provenance: mode=max
+          sbom: true
+
+      - name: Verify published manifest platforms
+        shell: bash
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --raw "docker.io/${IMAGE_NAME}@${DIGEST}" > manifest.json
+          jq -e '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")] | length >= 1' manifest.json
+          jq -e '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64")] | length >= 1' manifest.json
+
+      - name: Record image digest
+        shell: bash
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          {
+            echo "### Published Docker image"
+            echo
+            echo '```text'
+            echo "$TAGS"
+            echo "digest: $DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
