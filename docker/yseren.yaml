@@ -1,0 +1,7 @@
+server:
+  port: 1479
+  log_level: info
+
+sources:
+  - name: media
+    path: /media
