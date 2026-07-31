@@ -150,11 +150,12 @@ bridge 网络中的 YSeren 只能看到容器自己的 `172.x.x.x` 地址，因�
 - 工作流不会创建 `latest`、主版本或次版本等可变稳定标签。
 - 如果对应版本标签已经存在，工作流会拒绝覆盖并直接失败。
 
-仓库需要配置两个 Actions secrets：
+仓库的 `prod` GitHub Environment 需要配置两个 Environment secrets：
 
 - `DOCKERHUB_USERNAME`：Docker Hub 用户名（当前为 `seacolour`）。
 - `DOCKERHUB_TOKEN`：单独创建、具有仓库读写权限的 Docker Hub access token。
 
 不要从 Docker Desktop 提取或复制其登录凭据；应在 Docker Hub 单独创建 PAT，
-再通过 GitHub 仓库的 Actions secrets 页面保存。工作流合并到默认分支并配置
-secrets 后，才应手动发布新的多架构开发标签。
+再通过 GitHub 仓库的 **Settings → Environments → prod** 页面保存。发布任务已
+显式绑定 `prod` Environment；工作流合并到默认分支并配置 secrets 后，才应
+手动发布新的多架构开发标签。
