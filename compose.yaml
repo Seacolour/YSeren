@@ -1,0 +1,26 @@
+services:
+  yseren:
+    build:
+      context: .
+      args:
+        VERSION: ${YSEREN_VERSION:-dev}
+        VCS_REF: ${YSEREN_VCS_REF:-local}
+    image: ${YSEREN_IMAGE:-yseren:local}
+    ports:
+      - "${YSEREN_HOST_PORT:-1479}:1479"
+    volumes:
+      - type: bind
+        source: ${YSEREN_MEDIA_PATH:-./resource}
+        target: /media
+        read_only: true
+      - type: bind
+        source: ./docker/yseren.yaml
+        target: /config/yseren.yaml
+        read_only: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
